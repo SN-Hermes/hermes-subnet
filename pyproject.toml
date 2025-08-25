@@ -1,0 +1,15 @@
+[project]
+name = "network-hermes-subnet"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "aiohttp>=3.12.15",
+    "bittensor>=9.9.0",
+    "dotenv>=0.9.9",
+    "graphql-core>=3.2.6",
+    "langchain>=0.3.27",
+    "langchain-core>=0.3.74",
+    "langchain-openai>=0.3.31",
+]

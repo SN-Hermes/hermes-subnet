@@ -41,7 +41,7 @@ class Miner:
     agent: GraphQLAgent | None
 
     def __init__(self, config=None):
-        Settings.load_env_file('miner')
+        Settings.load_env_file('miner2')
         self.settings = Settings()
         self.should_exit = False
         self.agent = None
@@ -124,9 +124,9 @@ class Miner:
 
     async def create_chat_completion(self, request: Request):
         data = await request.json()
-        response: str = await self.agent.query(data["question"])
-        logger.info(f"\n🤖 [Miner] Agent: {response}")
-        return {"response": response}
+        # response: str = await self.agent.query(data["question"])
+        # logger.info(f"\n🤖 [Miner] Agent: {response}")
+        return {"response": "I don't know the answer to that."}
 
     def check_availability(self):
         return {"error": "check_availability"}
