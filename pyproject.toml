@@ -12,4 +12,5 @@ dependencies = [
     "langchain>=0.3.27",
     "langchain-core>=0.3.74",
     "langchain-openai>=0.3.31",
+    "ollama>=0.5.3",
 ]

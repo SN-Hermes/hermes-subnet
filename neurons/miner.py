@@ -18,122 +18,155 @@
 # DEALINGS IN THE SOFTWARE.
 
 import asyncio
-import os
-import sys
 import time
 import bittensor as bt
-from fastapi import APIRouter, FastAPI, Request
 from loguru import logger
-import netaddr
-import requests
-import uvicorn
-from common.subtensor import Settings
-from bittensor.core.extrinsics.serving import serve_extrinsic
-from bittensor.core.axon import FastAPIThreadedServer
+from ollama import AsyncClient
+from bittensor.core.stream import StreamingSynapse
+
+from common.protocol import CapacitySynapse, OrganicStreamSynapse, SyntheticNonStreamSynapse, SyntheticSynapse, SyntheticStreamSynapse
+from herms.base import BaseNeuron
+import agent.graphql_agent as subAgent
 
 
-sys.path.append(os.path.abspath("/Users/demon/Desktop/work/onf/subql-graphql-agent/examples"))
-from working_example import GraphQLAgent
+ollama_client = AsyncClient(host='http://localhost:11434')
 
-class Miner:
-    settings: Settings
-    should_exit: bool
-    agent: GraphQLAgent | None
+def allow_all(synapse: CapacitySynapse) -> None:
+    return None
 
-    def __init__(self, config=None):
-        Settings.load_env_file('miner')
-        self.settings = Settings()
-        self.should_exit = False
-        self.agent = None
 
-    async def start_graphql_agent(self):
-        logger.info("Starting GraphQL agent...")
-        try:
-            self.agent = GraphQLAgent(
-                "https://index-api.onfinality.io/sq/subquery/subquery-mainnet"
-            )
+class Miner(BaseNeuron):
+    version: str = '4'
 
-        except Exception as e:
-            logger.warning(f"Failed to start GraphQL agent: {e}")
+    axon: bt.Axon | None
+
+    @property
+    def role(self) -> str:
+        return "miner2"
+
+    def __init__(self):
+        super().__init__()
+
+    async def forward(self, synapse: SyntheticSynapse) -> SyntheticSynapse:
+        logger.info(f"\n🤖 [Miner] Received question: {synapse.question}")
+
+        message = {'role': 'user', 'content': synapse.question}
+        iter = await ollama_client.chat(model='llama3.2', messages=[message], stream=True)
+        async for part in iter:
+            logger.info(f"\n🤖 [Miner] Agent: {part}")
+
+        synapse.response = {"message": 'ok'}
+        return synapse
+
+    async def forward_stream(self, synapse: SyntheticStreamSynapse) -> StreamingSynapse.BTStreamingResponse:
+        from starlette.types import Send
+        logger.info(f"\n🤖 [Miner] Received stream question: {synapse.question}")
+
+        message = {'role': 'user', 'content': synapse.question}
+        async def token_streamer(send: Send):
+            iter = await ollama_client.chat(model='llama3.2', messages=[message], stream=True)
+            async for part in iter:
+                logger.info(f"\n🤖 [Miner] Agent: {part}")
+                text = part["message"]["content"] if "message" in part else str(part)
+                await send({
+                    "type": "http.response.body",
+                    "body": text.encode("utf-8"),
+                    "more_body": True
+                })
+                await asyncio.sleep(0.5)  # Simulate some delay
+            await send({
+                "type": "http.response.body",
+                "body": b"",
+                "more_body": False
+            })
+
+        return synapse.create_streaming_response(token_streamer)
+    
+    async def forward_stream_agent(self, synapse: OrganicStreamSynapse) -> StreamingSynapse.BTStreamingResponse:
+        from starlette.types import Send
+        logger.info(f"\n🤖 [Miner] Received stream question22: {synapse.completion}")
+
+        user_messages = [msg for msg in synapse.completion.messages if msg.role == "user"]
+        user_input = user_messages[-1].content
+
+        async def token_streamer(send: Send):
+            iter = subAgent.stream_chat_completion(self.serverAgent, user_input, synapse.completion)
+            async for part in iter:
+                logger.info(f"\n🤖 [Miner] Agent: {part}")
+                await send({
+                    "type": "http.response.body",
+                    "body": part,
+                    "more_body": True
+                })
+            await send({
+                "type": "http.response.body",
+                "body": b"",
+                "more_body": False
+            })
+
+        return synapse.create_streaming_response(token_streamer)
+
+    async def forward_non_stream_agent(self, synapse: SyntheticNonStreamSynapse) -> SyntheticNonStreamSynapse:
+        logger.info(f"\n🤖 [Miner] Received non stream question22: {synapse}")
+        response = await self.exampleAgent.query(synapse.question)
+        synapse.response = response
+        return synapse
+
+    async def forward_capacity(self, synapse: CapacitySynapse) -> CapacitySynapse:
+        logger.info(f"\n🤖 [Miner] Received capacity request")
+        synapse.response = {
+            "role": "miner",
+            "capacity": {
+                "projects": []
+            }
+        }
+        return synapse
 
     async def start(self):
-        external_ip = os.environ.get("EXTERNAL_IP", None)
-        if not external_ip:
-            try:
-                external_ip = requests.get("https://checkip.amazonaws.com").text.strip()
-                netaddr.IPAddress(external_ip)
-            except Exception:
-                logger.error("Failed to get external IP")
+        super().start()
 
-        logger.info(
-            f"Serving miner endpoint {external_ip}:{self.settings.port} on network: {self.settings.subtensor_network} with netuid: {self.settings.netuid}"
-        )
-
-        serve_success = serve_extrinsic(
-            subtensor=self.settings.subtensor,
-            wallet=self.settings.wallet,
-            ip=external_ip,
+        self.axon = bt.axon(
+            wallet=self.settings.wallet, 
             port=self.settings.port,
-            protocol=4,
-            netuid=self.settings.netuid,
+            ip=self.settings.external_ip,
+            external_ip=self.settings.external_ip,
+            external_port=self.settings.port
         )
-        if not serve_success:
-            logger.error("Failed to serve endpoint")
-            return
-        
-        await self.start_graphql_agent()
 
-        app = FastAPI()
-        router = APIRouter()
-        router.add_api_route(
-            "/v1/chat/completions",
-            self.create_chat_completion,
-            # dependencies=[Depends(self.verify_request)],
-            methods=["POST"],
+        self.axon.attach(
+            forward_fn=self.forward,
         )
-        router.add_api_route(
-            "/availability",
-            self.check_availability,
-            methods=["POST"],
-        )
-        router.add_api_route(
-            "/health",
-            self.check_health,
-            methods=["GET"],
-        )
-        app.include_router(router)
-        fast_config = uvicorn.Config(
-            app,
-            host="0.0.0.0",
-            port=self.settings.port,
-            log_level="info",
-            loop="asyncio",
-            workers=4,
-        )
-        self.fast_api = FastAPIThreadedServer(config=fast_config)
-        self.fast_api.start()
 
+        self.axon.attach(
+            forward_fn=self.forward_stream,
+        )
+
+        self.axon.attach(
+            forward_fn=self.forward_stream_agent,
+        )
+
+        self.axon.attach(
+            forward_fn=self.forward_non_stream_agent
+        )
+
+        self.axon.attach(
+            forward_fn=self.forward_capacity,
+            verify_fn=allow_all
+        )
+
+        self.axon.serve(netuid=self.settings.netuid, subtensor=self.settings.subtensor)
+
+        self.axon.start()
+        logger.info(f"Miner starting at block: {self.settings.subtensor.block}")
+        logger.info(f"Axon created: {self.axon}")
         logger.info(f"Miner starting at block: {self.settings.subtensor.block}")
 
-        # Main execution loop.
-        try:
-            while not self.should_exit:
-                time.sleep(1)
-        except Exception as e:
-            logger.error(str(e))
-
-    async def create_chat_completion(self, request: Request):
-        data = await request.json()
-        response: str = await self.agent.query(data["question"])
-        logger.info(f"\n🤖 [Miner] Agent: {response}")
-        return {"response": response}
-
-    def check_availability(self):
-        return {"error": "check_availability"}
-
-    def check_health(self):
-        return {"status": "ok"}
 
 if __name__ == "__main__":
     miner = Miner()
     asyncio.run(miner.start())
+
+    while True:
+        time.sleep(1)
+
+

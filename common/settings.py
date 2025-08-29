@@ -83,7 +83,9 @@ class Settings:
 
     def miners(self) -> List[int]:
         uids = []
+        print('all uids:', self.metagraph.uids)
         for uid in self.metagraph.uids:
+            print('uid:', uid, 'is_serving:', self.metagraph.axons[uid].is_serving, 'permit:', self.metagraph.validator_permit[uid], 'stake:', self.metagraph.S[uid])
             if not self.metagraph.axons[uid].is_serving:
               continue
             if self.metagraph.validator_permit[uid] and self.metagraph.S[uid] > 1024:
