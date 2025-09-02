@@ -18,6 +18,7 @@
 # DEALINGS IN THE SOFTWARE.
 
 import asyncio
+from pathlib import Path
 import time
 from typing import Any, Dict
 import bittensor as bt
@@ -32,6 +33,7 @@ from common.timer import Timer
 from herms.base import BaseNeuron
 
 import agent.graphql_agent as subAgent
+from common.project_manager import ProjectManager
 
 
 def allow_all(synapse: CapacitySynapse) -> None:
@@ -49,6 +51,7 @@ class Miner(BaseNeuron):
 
     def __init__(self):
         super().__init__()
+        self.agents = {}
 
     async def forward(self, synapse: SyntheticSynapse) -> SyntheticSynapse:
         logger.info(f"\n🤖 [Miner] Received question: {synapse.question}")
@@ -170,12 +173,16 @@ class Miner(BaseNeuron):
         }
         return synapse
 
-    def load_agent(self):
-        self.agents = AgentZoo.load_agents()
-    
     async def refresh_agents(self):
+        # neurons directory
+        current_dir = Path(__file__).parent
+        PROJECTS_DIR = current_dir.parent / "projects"
+        PROJECTS_DIR = PROJECTS_DIR / "miner"
+        pm = ProjectManager(PROJECTS_DIR)
+        await pm.pull()
+
         while True:
-            self.load_agent()
+            self.agents = AgentZoo.load_agents(PROJECTS_DIR)
             await asyncio.sleep(30 * 1)
 
     async def profile_tools_stats(self):
@@ -186,7 +193,6 @@ class Miner(BaseNeuron):
             for projectId, config in agents.items():
                 counter = config.get('counter')
                 logger.info(f"[MINER] Project {projectId} - Tool usage stats: {counter.stats()}")
-
 
     
     async def start(self):

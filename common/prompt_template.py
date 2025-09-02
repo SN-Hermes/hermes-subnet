@@ -24,7 +24,7 @@ Available Addresses:
 - Indexers: 0xe60554D90AF0e84A9C3d1A8643e41e49403945a6, 0xF64476a9A06ABC89da3CE502c6E09b22B676C14E
 - Consumer: 0x31E99bdA5939bA2e7528707507b017f43b67F89B
 
-Available Era Range: 0x40 to 0x51 (hexadecimal)
+Available Era: 0x40, 0x48, 0x49, 0x50, 0x51 (hexadecimal)
 
 Task: Generate ONE natural question about numerical data from the schema above.
 
@@ -34,13 +34,13 @@ Requirements:
 3. Focus on indexer/consumer operations or performance
 4. Use natural, conversational language
 5. You may reference the specific addresses above if relevant
-6. The question must specify a single era from the range 0x40 to 0x51
+6. The question must specify a single era from the available list: 0x40, 0x48, 0x49, 0x50, 0x51
 7. If the answer would be a list, limit results to the first 3 items
 
 Question Examples:
-- "How many blocks did indexer 0xe60554D90AF0e84A9C3d1A8643e41e49403945a6 process in era 0x45?"
-- "What is the total gas consumed by all indexers in era 0x48?"
-- "How many queries did the consumer submit during era 0x4A, showing only the first 3 results?"
+- "How many blocks did indexer 0xe60554D90AF0e84A9C3d1A8643e41e49403945a6 process in era 0x48?"
+- "What is the total gas consumed by all indexers in era 0x49?"
+- "How many queries did the consumer submit during era 0x50, showing only the first 3 results?"
 - "What percentage of indexing operations completed successfully in era 0x51?"
 - "Show me the top 3 highest transaction counts per block in era 0x40"
 

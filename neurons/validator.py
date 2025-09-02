@@ -18,6 +18,7 @@
 import asyncio
 import copy
 import os
+from pathlib import Path
 import time
 from typing import Any
 from loguru import logger
@@ -29,7 +30,7 @@ from uuid import uuid4
 from langchain_openai import ChatOpenAI
 from langchain.schema import HumanMessage
 
-from common.project_manager import projectManager
+from common.project_manager import ProjectManager
 from common.prompt_template import SCORE_PROMPT, SYNTHETIC_PROMPT
 from common.protocol import ChatCompletionRequest, SyntheticNonStreamSynapse
 from common.utils import try_get_external_ip, get_elapse_weight
@@ -67,9 +68,13 @@ class Validator(BaseNeuron):
     async def start(self):
         super().start()
 
-        await projectManager.pull()
+        current_dir = Path(__file__).parent
+        PROJECTS_DIR = current_dir.parent / "projects"
+        PROJECTS_DIR = PROJECTS_DIR / "validator"
+        self.pm = ProjectManager(PROJECTS_DIR)
+        await self.pm.pull()
 
-        self.server_agent = subAgent.initServerAgentWithConfig(projectManager.get_project(cid))
+        self.server_agent = subAgent.initServerAgentWithConfig(self.pm.get_project(cid))
         self.non_stream_chat_completion = subAgent.non_stream_chat_completion
 
 
@@ -122,7 +127,7 @@ class Validator(BaseNeuron):
             model=model_name,
             temperature=1
         )
-        entity_schema = projectManager.get_project(cid).schema_content
+        entity_schema = self.pm.get_project(cid).schema_content
         question_prompt = SYNTHETIC_PROMPT.format(entity_schema=entity_schema)
         await asyncio.sleep(10)
 
@@ -140,7 +145,7 @@ class Validator(BaseNeuron):
             ground_truth: str = await self.generate_ground_truth(question)
             if not ground_truth:
                 logger.warning("Failed to generate ground truth, skipping this round.", traceId=trace_id)
-                await asyncio.sleep(60 * 5)
+                await asyncio.sleep(60)
                 continue
     
             end_time = time.perf_counter()
@@ -155,7 +160,7 @@ class Validator(BaseNeuron):
                 if uid == self.uid:
                     continue
                 tasks.append(
-                    asyncio.create_task(self.query_miner(uid, question))
+                    asyncio.create_task(self.query_miner(uid, question, ground_truth))
                 )
             responses = await asyncio.gather(*tasks)
 
@@ -178,7 +183,7 @@ class Validator(BaseNeuron):
             # # # keep score 
             self.set_weights(uids, weighted_scores)
 
-            await asyncio.sleep(60 * 5)
+            await asyncio.sleep(60)
 
     async def generate_ground_truth(self, question: str):
         try:
@@ -194,7 +199,7 @@ class Validator(BaseNeuron):
             # return response.choices[0].message.content
 
             response = await self.server_agent.query_no_stream(question)
-            logger.info(f"Generated ground truth response: {response}")
+            # logger.info(f"Generated ground truth response: {response}")
             # todo: deal response
             return response.get('messages', [])[-1].content
             
@@ -203,7 +208,7 @@ class Validator(BaseNeuron):
             logger.error(f"Error generating ground truth: {e}")
         return ''
 
-    async def query_miner(self, uid: int, question: str):
+    async def query_miner(self, uid: int, question: str, ground_truth: str):
         try:
             start_time = time.perf_counter()
             synapse = SyntheticNonStreamSynapse(projectId=cid, question=question)
@@ -215,7 +220,14 @@ class Validator(BaseNeuron):
             )
             end_time = time.perf_counter()
             synapse.response = r.response
-            logger.info(f"query_miner miner {uid}, question: {question} response: {synapse.response}, cost: {end_time - start_time}")
+            logger.info(f"""
+query_miner 
+  miner: {uid}, 
+  question: {question},
+  answer: {synapse.response}, 
+  ground_truth: {ground_truth}, 
+  cost: {end_time - start_time}s
+""")
             synapse.elapsed_time = end_time - start_time
             return synapse
 

@@ -87,9 +87,10 @@ ALLOWED_CID = ['QmQqqmwwaBben8ncfHo3DMnDxyWFk5QcEdTmbevzKj7DBd']
 class ProjectManager:
     projects: Dict[str, Project] = {}
     projects_config: Dict[str, ProjectConfig] = {}
+    target_dir: Path | None = None
 
-    def __init__(self):
-        pass
+    def __init__(self, target_dir: Path | None = None):
+        self.target_dir = target_dir
 
     async def pull(self):
         """pull projects from board service."""
@@ -102,7 +103,7 @@ class ProjectManager:
             "limit": 50,
             "offset": 0,
         }
-        BOARD_SERVICE = os.environ['BOARD_SERVICE']
+        BOARD_SERVICE = os.environ.get('BOARD_SERVICE')
 
         async with aiohttp.ClientSession() as session:
             async with session.post(f"{BOARD_SERVICE}/project/list", headers=headers, json=data) as resp:
@@ -351,19 +352,20 @@ Make each capability very specific to the entities found in the schema."""
 
     
     def _save_project(self, config: ProjectConfig):
-        current_dir = Path(__file__).parent
-        PROJECTS_DIR = current_dir.parent / "projects"
+        # current_dir = Path(__file__).parent
+        # PROJECTS_DIR = current_dir.parent / "projects"
+        dir = self.target_dir / config.cid
+        dir.mkdir(parents=True, exist_ok=True)
 
-        PROJECTS_DIR.mkdir(parents=True, exist_ok=True)
-        dir = PROJECTS_DIR / config.cid
         file = dir / "config.json"
         with open(file, "w") as f:
             json.dump(asdict(config), f, indent=2)
     
 
-projectManager = ProjectManager()
+# projectManager = ProjectManager()
 
 if __name__ == "__main__":
+    projectManager = ProjectManager()
     asyncio.run(projectManager.pull())
 
     logger.info(f"Project projects: {projectManager.projects}")

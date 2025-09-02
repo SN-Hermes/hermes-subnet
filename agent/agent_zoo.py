@@ -1,3 +1,4 @@
+import json
 import os
 from pathlib import Path
 import pkgutil
@@ -11,6 +12,7 @@ from langchain_core.tools import BaseTool
 from langgraph.prebuilt import create_react_agent
 from langgraph.graph.state import CompiledStateGraph
 from agent.stats import ToolCountHandler
+from common.utils import create_system_prompt
 
 
 class AgentZoo:
@@ -27,20 +29,27 @@ class AgentZoo:
     counter_configs: ClassVar[Dict[str, ToolCountHandler]] = {}
   
     @classmethod
-    def load_agents(cls, projects_dir: str = "projects") -> Dict[str, Dict[str, Dict[str, str] | CompiledStateGraph]]:
+    def load_agents(cls, projects_dir: Path) -> Dict[str, Dict[str, Dict[str, str] | CompiledStateGraph]]:
         base_path = Path(projects_dir)
         for project_dir in base_path.iterdir():
             if not project_dir.is_dir():
                 continue
+            
             project_name = project_dir.name
+            if project_name == "__pycache__":
+                continue
 
             project = cls.agent_configs.get(project_name)
             prev_tools = cls.agent_configs.get(project_name, {}).get('tools', {})
             current_tools = {}
             
+            relative_module_parts = project_dir.relative_to(Path(__file__).parent.parent / "projects").parts
+            package_prefix = ".".join(["projects"] + list(relative_module_parts))
+
             for module_info in pkgutil.iter_modules([str(project_dir)]):
                 module_name = module_info.name
-                full_module = f"projects.{project_name}.{module_name}"
+                # full_module = f"projects.{project_name}.{module_name}"
+                full_module = f"{package_prefix}.{module_name}"
 
                 if full_module in sys.modules:
                     mod = importlib.reload(sys.modules[full_module])
@@ -65,13 +74,34 @@ class AgentZoo:
             
 
             if (not project) or (created or updated or deleted):
+                config_path = project_dir / 'config.json'
+
+                suc = False
+                if config_path.exists():
+                    try:
+                        with open(config_path) as f:
+                            config = json.load(f)
+                            suc = True
+                    except Exception as e:
+                        logger.error(f"Failed to read {config_path}: {e}")
+                        config = {}
+                else:
+                    logger.warning(f"Config file not found: {config_path}")
+                    config = {}
+
+                prompt = create_system_prompt(
+                    domain_name=config.get("domain_name", ""),
+                    domain_capabilities=config.get("domain_capabilities", []),
+                    decline_message=config.get("decline_message", "")
+                ) if suc else f"You are the agent for project {project_name}."
+
                 # reconstruct agent
                 agent = create_react_agent(
-                    model="openai:gpt-4.1-mini",
+                    model="openai:gpt-4o-mini",
                     tools=tools,
-                    prompt=f"You are the agent for project {project_name}."
+                    prompt=prompt
                 )
-                logger.info(f"[AGENT] load agent, Project {project_name} - tools: {[t.name for t in tools]}, Created: {[t.name for t in created]}, Updated: {[t.name for t in updated]}, Deleted: {deleted}")
+                logger.info(f"[AGENT] load agent, Project {project_name} - tools: {[t.name for t in tools]}, Created: {[t.name for t in created]}, Updated: {[t.name for t in updated]}, Deleted: {deleted}, with prompt: {suc}")
 
 
                 cls.agent_configs[project_name] = {
@@ -83,7 +113,6 @@ class AgentZoo:
                 logger.info(f"[AGENT] Project {project_name} - No changes in tools.")
     
         return cls.agent_configs
-
 
     @classmethod
     def get_agent(cls, project_name: str) -> CompiledStateGraph | None:

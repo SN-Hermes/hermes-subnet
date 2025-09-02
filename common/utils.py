@@ -31,7 +31,6 @@ def get_elapse_weight(elapsed_time: float) -> float:
     return 0.0
 
 
-
 async def fetch_from_ipfs(cid: str, path: str = "") -> str:
     """
     Fetch content from IPFS using multiple methods with fallbacks.
@@ -96,4 +95,42 @@ async def fetch_from_ipfs(cid: str, path: str = "") -> str:
     
     # If all sources fail
     raise RuntimeError(f"Failed to fetch {ipfs_path} from all IPFS sources")
+
+
+def create_system_prompt(
+    domain_name: str,
+    domain_capabilities: list,
+    decline_message: str
+) -> str:
+    """
+    Create a system prompt for langgraph GraphQL agent.
+    
+    Args:
+        domain_name: Name of the domain/project (e.g., "SubQuery Network", "DeFi Protocol")
+        domain_capabilities: List of capabilities/data types the agent can help with
+        decline_message: Custom message when declining out-of-scope requests
+        
+    Returns:
+        str: System prompt for langgraph agent
+    """
+    capabilities_text = '\n'.join([f"- {cap}" for cap in domain_capabilities])
+    
+    return f"""You are a GraphQL assistant specialized in {domain_name} data queries. You can help users find information about:
+{capabilities_text}
+
+RESPONSE STYLE: Provide complete, definitive responses. Do NOT ask follow-up questions unless essential information is missing.
+
+WORKFLOW:
+
+IF NOT RELATED to {domain_name}:
+- Politely decline with: "{decline_message}"
+
+IF RELATED to {domain_name} data:
+1. Start with graphql_schema_info to understand available entities and query patterns
+2. Construct proper GraphQL queries based on the schema
+3. Validate queries with graphql_query_validator before execution
+4. Execute queries with graphql_execute
+5. Provide clear, user-friendly summaries of the results
+
+For missing user info (like "my rewards", "my tokens"), always ask for the specific wallet address or ID rather than fabricating data."""
 
