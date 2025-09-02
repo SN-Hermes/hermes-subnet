@@ -8,7 +8,7 @@ from typing import Any
 
 from loguru import logger
 
-from common.protocol import ChatCompletionRequest, OrganicStreamSynapse, SyntheticStreamSynapse
+from common.protocol import ChatCompletionRequest, OrganicNonStreamSynapse, OrganicStreamSynapse, SyntheticStreamSynapse
 
 sys.path.append(os.path.abspath("/Users/demon/Desktop/work/onf/subql-graphql-agent/examples"))
 from common.protocol import CapacitySynapse, SyntheticStreamSynapse
@@ -76,30 +76,31 @@ async def chat(cid: str, request: Request, body: ChatCompletionRequest):
     v: Any = request.app.state.validator
     dendrite: bt.Dendrite = v.dendrite
 
-    # user_messages = [msg for msg in body.messages if msg.role == "user"]
-    # if not user_messages:
-    #     raise HTTPException(status_code=400, detail="No user message found")
-    # user_input = user_messages[-1].content
-    
-    # return StreamingResponse(
-    #   stream_chat_completion(v.agent, user_input, body),
-    #   media_type="text/plain"
-    # )
+    if body.stream:
+        async def streamer():
+            miner_uid = 3
+            synapse = OrganicStreamSynapse(projectId=cid, completion=body)
+            responses = await dendrite.forward(
+                axons=v.settings.metagraph.axons[miner_uid],
+                synapse=synapse,
+                deserialize=True,
+                timeout=60*3,
+                streaming=True,
+            )
+            async for part in responses:
+                logger.info(f"V3 got part: {part}, type: {type(part)}")
+                yield part
+        return StreamingResponse(streamer(), media_type="text/plain")
 
-    async def streamer():
-        miner_uid = 3
-        synapse = OrganicStreamSynapse(completion=body)
-        responses = await dendrite.forward(
-            axons=v.settings.metagraph.axons[miner_uid],
-            synapse=synapse,
-            deserialize=True,
-            timeout=60*3,
-            streaming=True,
-        )
-        async for part in responses:
-            logger.info(f"V3 got part: {part}, type: {type(part)}")
-            yield part
-    return StreamingResponse(streamer(), media_type="text/plain")
+    miner_uid = 3
+    synapse = OrganicNonStreamSynapse(projectId=cid, completion=body)
+    response = await dendrite.forward(
+        axons=v.settings.metagraph.axons[miner_uid],
+        synapse=synapse,
+        deserialize=False,
+        timeout=60*3,
+    )
+    return response
 
 @app.get("/health")
 def health():

@@ -1,0 +1,371 @@
+
+
+import asyncio
+from dataclasses import asdict, dataclass
+import json
+import os
+from pathlib import Path
+from typing import Any, Dict, List, Optional
+
+import aiohttp
+import httpx
+from loguru import logger
+from pydantic import BaseModel
+import yaml
+
+from common.utils import fetch_from_ipfs
+
+
+class Metadata(BaseModel):
+    cid: str
+    endpoint: str
+
+class Project(BaseModel):
+    enabled: bool
+    description: str
+    name: str
+    metadata: Metadata
+
+class ProjectData(BaseModel):
+    data: List[Project]
+    total: int
+    page: int
+    pageSize: int
+    totalPages: int
+
+class ProjectListResponse(BaseModel):
+    code: int
+    message: str
+    data: ProjectData
+
+
+class GraphqlProvider:
+    """Supported GraphQL provider types."""
+    SUBQL = "subql"
+    THE_GRAPH = "thegraph"
+    UNKNOWN = "unknown"
+    
+    @classmethod
+    def all_values(cls) -> List[str]:
+        """Get all valid provider type values."""
+        return [cls.SUBQL, cls.THE_GRAPH, cls.UNKNOWN]
+        
+@dataclass
+class ProjectConfig:
+    """Configuration for a SubQuery or The Graph project."""
+    cid: str
+    endpoint: str
+    schema_content: str
+    node_type: str = GraphqlProvider.SUBQL
+    manifest: Dict[str, Any] = None
+    domain_name: str = "GraphQL Project"
+    domain_capabilities: List[str] = None
+    decline_message: str = "I'm specialized in this project's data queries. I can help you with the indexed blockchain data, but I cannot assist with [their topic]. Please ask me about this project's data instead."
+    suggested_questions: List[str] = None
+    authorization: Optional[str] = None
+    
+    def __post_init__(self):
+        if self.manifest is None:
+            self.manifest = {}
+        if self.domain_capabilities is None:
+            self.domain_capabilities = [
+                "Blockchain data indexed by this project",
+                "Entity relationships and queries",
+                "Project-specific metrics and analytics"
+            ]
+        if self.suggested_questions is None:
+            self.suggested_questions = [
+                "What types of data can I query from this project?",
+                "Show me a sample GraphQL query",
+                "What entities are available in this schema?",
+                "How can I filter the data?"
+            ]
+
+
+ALLOWED_CID = ['QmQqqmwwaBben8ncfHo3DMnDxyWFk5QcEdTmbevzKj7DBd']
+
+class ProjectManager:
+    projects: Dict[str, Project] = {}
+    projects_config: Dict[str, ProjectConfig] = {}
+
+    def __init__(self):
+        pass
+
+    async def pull(self):
+        """pull projects from board service."""
+        headers = {
+            "accept": "application/json",
+            "Content-Type": "application/json",
+        }
+        data = {
+            "enabled": True,
+            "limit": 50,
+            "offset": 0,
+        }
+        BOARD_SERVICE = os.environ['BOARD_SERVICE']
+
+        async with aiohttp.ClientSession() as session:
+            async with session.post(f"{BOARD_SERVICE}/project/list", headers=headers, json=data) as resp:
+                response_data = await resp.json()
+        parsed = ProjectListResponse(**response_data)
+        self.projects.update({project.metadata.cid: project for project in parsed.data.data})
+
+        for cid, project in self.projects.items():
+            if cid not in ALLOWED_CID:
+                logger.warning(f"Project {cid} is not in the allowed list.")
+                continue
+            await self.register_project(cid, project.metadata.endpoint)
+        return parsed
+
+    def get_project(self, cid: str) -> ProjectConfig:
+        return self.projects_config.get(cid)
+
+    async def register_project(self, cid: str, endpoint: str) -> ProjectConfig:
+        try:
+            # Fetch manifest from IPFS using cat API
+            logger.info(f"Fetching project manifest for CID: {cid}")
+            manifest_content = await fetch_from_ipfs(cid)
+            try:
+                manifest = yaml.safe_load(manifest_content)
+            except yaml.YAMLError:
+                manifest = json.loads(manifest_content)
+            # Handle different schema path formats
+            schema_info = manifest.get('schema', {})
+            if isinstance(schema_info, dict):
+                # The Graph format: schema: { file: { "/": "/ipfs/QmXXX" } }
+                if 'file' in schema_info and isinstance(schema_info['file'], dict) and '/' in schema_info['file']:
+                    schema_path = schema_info['file']['/']
+                    if schema_path.startswith('/ipfs/'):
+                        # Extract CID from The Graph format: /ipfs/QmXXX
+                        schema_cid = schema_path.replace('/ipfs/', '')
+                        logger.debug(f"Fetching The Graph schema from IPFS CID: {schema_cid}")
+                        schema_content = await fetch_from_ipfs(schema_cid)
+                    else:
+                        logger.debug(f"Fetching schema file: {schema_path}")
+                        schema_content = await fetch_from_ipfs(cid, schema_path)
+                else:
+                    # SubQL format: schema: { file: "schema.graphql" }
+                    schema_path = schema_info.get('file', 'schema.graphql')
+                    if schema_path.startswith('http'):
+                        logger.debug(f"Fetching schema from external URL: {schema_path}")
+                        async with httpx.AsyncClient(timeout=30.0) as client:
+                            schema_response = await client.get(schema_path)
+                            schema_response.raise_for_status()
+                            schema_content = schema_response.text
+                    elif schema_path.startswith('ipfs://'):
+                        schema_cid = schema_path.replace('ipfs://', '')
+                        logger.debug(f"Fetching SubQL schema from IPFS CID: {schema_cid}")
+                        schema_content = await fetch_from_ipfs(schema_cid)
+                    else:
+                        logger.debug(f"Fetching schema file: {schema_path}")
+                        schema_content = await fetch_from_ipfs(cid, schema_path)
+            else:
+                # Fallback for simple string format
+                schema_path = str(schema_info) if schema_info else 'schema.graphql'
+                logger.debug(f"Fetching schema file: {schema_path}")
+                schema_content = await fetch_from_ipfs(cid, schema_path)
+
+            llm_analysis = await self.analyze_project_with_llm(manifest, schema_content)
+
+            config = ProjectConfig(
+                cid=cid,
+                endpoint=endpoint,
+                schema_content=schema_content,
+                manifest=manifest,
+                domain_name=llm_analysis["domain_name"],
+                domain_capabilities=llm_analysis["domain_capabilities"],
+                decline_message=llm_analysis["decline_message"],
+                suggested_questions=llm_analysis.get("suggested_questions", []),
+            )
+            # Save to disk and memory
+            self._save_project(config)
+
+            self.projects_config[cid] = config
+            logger.info(f"Registered project: {llm_analysis['domain_name']} ({cid})")
+            return config
+        except Exception as e:
+            raise RuntimeError(f"Failed to register project {cid}: {str(e)}")
+    
+
+    async def analyze_project_with_llm(self, manifest: dict, schema_content: str, llm=None) -> dict:
+        """
+        Use LLM to analyze project manifest and schema to generate appropriate prompts.
+        Args:
+            manifest: Project manifest data
+            schema_content: GraphQL schema content
+        
+        Returns:
+            dict: Generated domain_name, domain_capabilities, and decline_message
+        """
+        try:
+            from langchain_openai import ChatOpenAI
+            from langchain.schema import HumanMessage
+        
+            # Use provided LLM or create one with same config as GraphQLAgent
+            if llm is None:
+                model_name = os.getenv("LLM_MODEL", "gpt-4o-mini")
+                llm = ChatOpenAI(
+                    model=model_name,
+                    temperature=0  # Same as GraphQLAgent
+                )
+            # Prepare schema content for LLM (truncate if too long)
+            schema_preview = schema_content[:3000] if len(schema_content) > 3000 else schema_content
+        
+            # Get project basics
+            project_name = manifest.get('name', 'Unknown Project')
+            project_description = manifest.get('description', '')
+        
+            # Get network/chain info
+            network_info = ""
+            if 'network' in manifest:
+                network = manifest['network']
+                if isinstance(network, dict):
+                    chain_id = network.get('chainId', network.get('endpoint', ''))
+                    network_info = f"Network: {chain_id}"
+        
+            # Get datasource info
+            datasources_info = ""
+            if 'dataSources' in manifest:
+                ds_kinds = [ds.get('kind', 'unknown') for ds in manifest['dataSources']]
+                datasources_info = f"Data sources: {', '.join(set(ds_kinds))}"
+        
+            # Create focused analysis prompt
+            analysis_prompt = f"""Analyze this SubQuery indexing project and generate specific agent configuration:
+
+PROJECT INFO:
+- Name: {project_name}
+- Description: {project_description}
+- {network_info}
+- {datasources_info}
+
+GRAPHQL SCHEMA:
+```graphql
+{schema_preview}
+```
+
+Based on the project info and GraphQL schema entities, generate:
+
+1. A clear domain_name that describes what this project indexes
+2. Specific domain_capabilities based on the actual GraphQL entities and what queries users can make
+3. A decline_message that mentions the specific domain
+4. Suggested questions that users can ask to explore the data
+
+IMPORTANT: Look at the GraphQL types to understand what this project tracks.
+
+Respond ONLY with valid JSON in this exact format (no markdown code blocks):
+{{
+  "domain_name": "Specific Project Name",
+  "domain_capabilities": [
+    "Query [specific entity] data and relationships",
+    "Analyze [specific metrics] and trends", 
+    "Track [specific events/transactions]",
+    "Monitor [specific blockchain activities]"
+  ],
+  "decline_message": "I'm specialized in {project_name} data queries. I can help you with [specific data types], but I cannot assist with [their topic]. Please ask me about {project_name} data instead.",
+  "suggested_questions": [
+    "Show me recent [specific entity type] transactions",
+    "What are the top [entity] by [field]?",
+    "How many [events] happened in the last day?",
+    "Can you show me a sample GraphQL query for [entity]?"
+  ]
+}}
+
+Make each capability very specific to the entities found in the schema."""
+
+            logger.info("Analyzing project with LLM...")
+            logger.info(f"Project info - Name: {project_name}, Description: {project_description[:100]}...")
+            logger.debug(f"Network: {network_info}")
+            logger.debug(f"Data sources: {datasources_info}")
+            logger.debug(f"Schema length: {len(schema_content)} chars (preview: {len(schema_preview)} chars)")
+            logger.debug(f"Sending prompt to LLM (length: {len(analysis_prompt)} chars)")
+            response = llm.invoke([HumanMessage(content=analysis_prompt)])
+            logger.debug(f"LLM Raw Response: {response.content}")
+        
+            # Parse JSON response - handle markdown code blocks
+            try:
+                content = response.content.strip()
+            
+                # Remove markdown code blocks if present
+                if content.startswith('```json'):
+                 content = content[7:]  # Remove ```json
+                if content.startswith('```'):
+                    content = content[3:]   # Remove ```
+                if content.endswith('```'):
+                    content = content[:-3]  # Remove closing ```
+            
+                content = content.strip()
+                result = json.loads(content)
+            
+                # Ensure all required fields are present
+                if 'suggested_questions' not in result:
+                    logger.warning("LLM response missing suggested_questions, adding defaults")
+                    result['suggested_questions'] = [
+                        "What types of data can I query from this project?",
+                        "Show me a sample GraphQL query",
+                        "What entities are available in this schema?",
+                        "How can I filter the data?"
+                    ]
+            
+                logger.info(f"LLM analysis completed: {result['domain_name']}")
+                logger.info(f"Generated capabilities: {len(result['domain_capabilities'])} items")
+                logger.info(f"Generated questions: {len(result['suggested_questions'])} items")
+                return result
+            except json.JSONDecodeError as e:
+                logger.error(f"LLM response was not valid JSON: {e}")
+                logger.debug(f"Full raw response: {response.content}")
+                logger.debug(f"Cleaned content: {content}")
+                raise ValueError("Invalid JSON response from LLM")
+            
+        except Exception as e:
+            logger.warning(f"LLM analysis failed: {e}, using enhanced fallback")
+        
+            # Enhanced fallback analysis
+            project_name = manifest.get('name', 'SubQuery Project')
+            project_description = manifest.get('description', '')
+        
+            # Generate better domain name
+            if project_description and len(project_description) > 10:
+                domain_name = f"{project_name} - {project_description[:50]}..."
+            else:
+                domain_name = project_name
+            
+            # Generate basic capabilities
+            capabilities = [
+                "Query blockchain data indexed by this project",
+                "Analyze transaction patterns and trends", 
+                "Track historical blockchain activities",
+                "Monitor smart contract events and state changes"
+            ]
+            
+            return {
+                "domain_name": domain_name,
+                "domain_capabilities": capabilities,
+                "decline_message": f"I'm specialized in {project_name} data queries. I can help you with the indexed blockchain data, but I cannot assist with [their topic]. Please ask me about {project_name} data instead.",
+                "suggested_questions": [
+                    "What types of data can I query from this project?",
+                    "Show me a sample GraphQL query",
+                    "What entities are available in this schema?",
+                    "How can I filter the data?"
+                ]
+            }
+
+    
+    def _save_project(self, config: ProjectConfig):
+        current_dir = Path(__file__).parent
+        PROJECTS_DIR = current_dir.parent / "projects"
+
+        PROJECTS_DIR.mkdir(parents=True, exist_ok=True)
+        dir = PROJECTS_DIR / config.cid
+        file = dir / "config.json"
+        with open(file, "w") as f:
+            json.dump(asdict(config), f, indent=2)
+    
+
+projectManager = ProjectManager()
+
+if __name__ == "__main__":
+    asyncio.run(projectManager.pull())
+
+    logger.info(f"Project projects: {projectManager.projects}")
+    logger.info(f"\n\n")
+    logger.info(f"Project projects_config: {projectManager.projects_config}")

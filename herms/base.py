@@ -12,8 +12,9 @@ import agent.graphql_agent as subAgent
 
 
 class BaseNeuron(ABC):
-    serverAgent: Any
-    exampleAgent: Any
+    # serverAgent: Any
+    non_stream_chat_completion: Any
+    # exampleAgent: Any
     settings: Settings
     should_exit: bool
     uid: int
@@ -32,8 +33,9 @@ class BaseNeuron(ABC):
         self.uid = self.settings.metagraph.hotkeys.index(
             self.settings.wallet.hotkey.ss58_address
         )
-        self.serverAgent = subAgent.initServerAgent()
-        self.exampleAgent = subAgent.initExampleAgent()
+        # self.serverAgent = subAgent.initServerAgent()
+        # self.non_stream_chat_completion = subAgent.non_stream_chat_completion
+        # self.exampleAgent = subAgent.initExampleAgent()
 
     def start(self):
         external_ip = self.settings.external_ip or try_get_external_ip()

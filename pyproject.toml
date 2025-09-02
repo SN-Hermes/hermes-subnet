@@ -12,5 +12,8 @@ dependencies = [
     "langchain>=0.3.27",
     "langchain-core>=0.3.74",
     "langchain-openai>=0.3.31",
+    "langgraph>=0.6.6",
     "ollama>=0.5.3",
+    "pyyaml>=6.0.2",
+    "uuid>=1.30",
 ]

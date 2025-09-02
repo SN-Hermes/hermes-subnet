@@ -19,17 +19,20 @@
 
 import asyncio
 import time
+from typing import Any, Dict
 import bittensor as bt
 from loguru import logger
 from ollama import AsyncClient
 from bittensor.core.stream import StreamingSynapse
+from langgraph.graph.state import CompiledStateGraph
 
-from common.protocol import CapacitySynapse, OrganicStreamSynapse, SyntheticNonStreamSynapse, SyntheticSynapse, SyntheticStreamSynapse
+from agent.agent_zoo import AgentZoo
+from common.protocol import CapacitySynapse, OrganicNonStreamSynapse, OrganicStreamSynapse, SyntheticNonStreamSynapse, SyntheticSynapse, SyntheticStreamSynapse
+from common.timer import Timer
 from herms.base import BaseNeuron
+
 import agent.graphql_agent as subAgent
 
-
-ollama_client = AsyncClient(host='http://localhost:11434')
 
 def allow_all(synapse: CapacitySynapse) -> None:
     return None
@@ -37,18 +40,19 @@ def allow_all(synapse: CapacitySynapse) -> None:
 
 class Miner(BaseNeuron):
     version: str = '4'
-
     axon: bt.Axon | None
+    agents:  Dict[str, Dict[str, Dict[str, str] | CompiledStateGraph]] | None
 
     @property
     def role(self) -> str:
-        return "miner2"
+        return "miner"
 
     def __init__(self):
         super().__init__()
 
     async def forward(self, synapse: SyntheticSynapse) -> SyntheticSynapse:
         logger.info(f"\n🤖 [Miner] Received question: {synapse.question}")
+        ollama_client = AsyncClient(host='http://localhost:11434')
 
         message = {'role': 'user', 'content': synapse.question}
         iter = await ollama_client.chat(model='llama3.2', messages=[message], stream=True)
@@ -107,9 +111,53 @@ class Miner(BaseNeuron):
         return synapse.create_streaming_response(token_streamer)
 
     async def forward_non_stream_agent(self, synapse: SyntheticNonStreamSynapse) -> SyntheticNonStreamSynapse:
-        logger.info(f"\n🤖 [Miner] Received non stream question22: {synapse}")
-        response = await self.exampleAgent.query(synapse.question)
+        logger.info(f"\n🤖 [Miner] Received synthetic: {synapse}")
+        projectId = synapse.projectId
+
+        agent_config = self.agents.get(projectId, {})
+        agent = agent_config.get('agent')
+        counter = agent_config.get('counter')
+
+        if not agent:
+            logger.warning(f"[MINER] No agent found for project {projectId}")
+            synapse.response = {"error": "No agent found"}
+            return synapse
+
+        with Timer(label=f"Generating query for task: {synapse.model_dump_json()}"):
+            response = await agent.ainvoke(
+                {"messages": [{"role": "user", "content": synapse.question}]},
+                config={"callbacks": [counter]}
+            )
+            # logger.info(f"xxx response xxx: {response}")
+            response = response.get('messages')[-1].content
+
         synapse.response = response
+        logger.info(f"Generated response: {synapse.response}")
+        return synapse
+
+    async def forward_organic_non_stream_agent(self, synapse: OrganicNonStreamSynapse) -> OrganicNonStreamSynapse:
+        logger.info(f"\n🤖 [Miner] Received organic non stream question: {synapse}")
+        projectId = synapse.projectId
+
+        agent_config = self.agents.get(projectId, {})
+        agent = agent_config.get('agent')
+        counter = agent_config.get('counter')
+
+        if not agent:
+            logger.warning(f"[MINER] No agent found for project {projectId}")
+            synapse.response = {"error": "No agent found"}
+            return synapse
+
+        user_messages = [msg for msg in synapse.completion.messages if msg.role == "user"]
+        user_input = user_messages[-1].content
+
+        with Timer(label=f"Generating query for task: {synapse.model_dump_json()}"):
+            response = agent.invoke(
+                {"messages": [{"role": "user", "content": user_input}]},
+                config={"callbacks": [counter]}
+            )
+        synapse.response = response
+        logger.info(f"Generated response: {synapse.model_dump_json()}")
         return synapse
 
     async def forward_capacity(self, synapse: CapacitySynapse) -> CapacitySynapse:
@@ -122,6 +170,25 @@ class Miner(BaseNeuron):
         }
         return synapse
 
+    def load_agent(self):
+        self.agents = AgentZoo.load_agents()
+    
+    async def refresh_agents(self):
+        while True:
+            self.load_agent()
+            await asyncio.sleep(30 * 1)
+
+    async def profile_tools_stats(self):
+        while True:
+            await asyncio.sleep(10 * 1)
+            agents = self.agents
+    
+            for projectId, config in agents.items():
+                counter = config.get('counter')
+                logger.info(f"[MINER] Project {projectId} - Tool usage stats: {counter.stats()}")
+
+
+    
     async def start(self):
         super().start()
 
@@ -150,6 +217,10 @@ class Miner(BaseNeuron):
         )
 
         self.axon.attach(
+            forward_fn=self.forward_organic_non_stream_agent
+        )
+
+        self.axon.attach(
             forward_fn=self.forward_capacity,
             verify_fn=allow_all
         )
@@ -160,6 +231,16 @@ class Miner(BaseNeuron):
         logger.info(f"Miner starting at block: {self.settings.subtensor.block}")
         logger.info(f"Axon created: {self.axon}")
         logger.info(f"Miner starting at block: {self.settings.subtensor.block}")
+
+        tasks = [
+            asyncio.create_task(
+                self.refresh_agents()
+            ),
+            asyncio.create_task(
+                self.profile_tools_stats()
+            )
+        ]
+        await asyncio.gather(*tasks)
 
 
 if __name__ == "__main__":

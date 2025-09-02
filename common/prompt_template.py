@@ -1,6 +1,6 @@
 from langchain.prompts import PromptTemplate
 
-synthetic_template = """
+synthetic_template_V1 = """
 You are given the following document as background context:
 {entity_schema}
 Your task:
@@ -14,9 +14,42 @@ Your task:
 Now generate the question:
 """
 
+synthetic_template_V2 = """
+You are a question generator for database schema analysis.
+
+Background Context:
+{entity_schema}
+
+Available Addresses:
+- Indexers: 0xe60554D90AF0e84A9C3d1A8643e41e49403945a6, 0xF64476a9A06ABC89da3CE502c6E09b22B676C14E
+- Consumer: 0x31E99bdA5939bA2e7528707507b017f43b67F89B
+
+Available Era Range: 0x40 to 0x51 (hexadecimal)
+
+Task: Generate ONE natural question about numerical data from the schema above.
+
+Requirements:
+1. Ask about a specific numerical value, metric, or calculation
+2. Ensure the question is answerable using the provided schema
+3. Focus on indexer/consumer operations or performance
+4. Use natural, conversational language
+5. You may reference the specific addresses above if relevant
+6. The question must specify a single era from the range 0x40 to 0x51
+7. If the answer would be a list, limit results to the first 3 items
+
+Question Examples:
+- "How many blocks did indexer 0xe60554D90AF0e84A9C3d1A8643e41e49403945a6 process in era 0x45?"
+- "What is the total gas consumed by all indexers in era 0x48?"
+- "How many queries did the consumer submit during era 0x4A, showing only the first 3 results?"
+- "What percentage of indexing operations completed successfully in era 0x51?"
+- "Show me the top 3 highest transaction counts per block in era 0x40"
+
+Output: [Question only, no explanations]
+"""
+
 SYNTHETIC_PROMPT = PromptTemplate(
     input_variables=["entity_schema"],
-    template=synthetic_template
+    template=synthetic_template_V2
 )
 
 
@@ -30,7 +63,7 @@ Rules:
 4. Output only the score as a number. Do not provide explanations or any extra text.  
 
 [Reference Answer]:  
-{ground_truth}  
+{ground_truth} 
 
 [Response]:  
 {miner_answer}  

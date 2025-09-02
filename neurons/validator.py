@@ -18,25 +18,31 @@
 import asyncio
 import copy
 import os
-import httpx
+import time
+from typing import Any
 from loguru import logger
 import numpy as np
 import bittensor as bt
 import torch
 import uvicorn
+from uuid import uuid4
 from langchain_openai import ChatOpenAI
 from langchain.schema import HumanMessage
 
+from common.project_manager import projectManager
 from common.prompt_template import SCORE_PROMPT, SYNTHETIC_PROMPT
-from common.protocol import SyntheticNonStreamSynapse
-from common.utils import try_get_external_ip
+from common.protocol import ChatCompletionRequest, SyntheticNonStreamSynapse
+from common.utils import try_get_external_ip, get_elapse_weight
 from herms.validator.api import app
 from herms.base import BaseNeuron
+import agent.graphql_agent as subAgent
 
 
+cid = 'QmQqqmwwaBben8ncfHo3DMnDxyWFk5QcEdTmbevzKj7DBd'
 class Validator(BaseNeuron):
     version: str = '4'
 
+    server_agent: Any
     dendrite: bt.Dendrite
     miners: list[int] | None
     llm: ChatOpenAI | None
@@ -60,6 +66,12 @@ class Validator(BaseNeuron):
 
     async def start(self):
         super().start()
+
+        await projectManager.pull()
+
+        self.server_agent = subAgent.initServerAgentWithConfig(projectManager.get_project(cid))
+        self.non_stream_chat_completion = subAgent.non_stream_chat_completion
+
 
         tasks = [
             asyncio.create_task(
@@ -110,10 +122,7 @@ class Validator(BaseNeuron):
             model=model_name,
             temperature=1
         )
-        schema_file_path = "/Users/demon/Desktop/work/onf/subql-graphql-agent/examples/schema.graphql"
-        with open(schema_file_path, 'r', encoding='utf-8') as f:
-            entity_schema = f.read()
-    
+        entity_schema = projectManager.get_project(cid).schema_content
         question_prompt = SYNTHETIC_PROMPT.format(entity_schema=entity_schema)
         await asyncio.sleep(10)
 
@@ -121,19 +130,27 @@ class Validator(BaseNeuron):
             # generate challenge
             summary_response = self.llm.invoke([HumanMessage(content=question_prompt)])
             question = summary_response.content.strip()
-            logger.info(f"\n🤖 generate sythetic challenge: {question}")
+
+            trace_id = str(uuid4())
+
+            logger.info(f"\n🤖 generate sythetic challenge: {question}", traceId=trace_id)
 
             # generate ground truth
-            ground_truth = await self.generate_ground_truth(question)
+            start_time = time.perf_counter()
+            ground_truth: str = await self.generate_ground_truth(question)
             if not ground_truth:
-                logger.warning("Failed to generate ground truth, skipping this round.")
+                logger.warning("Failed to generate ground truth, skipping this round.", traceId=trace_id)
+                await asyncio.sleep(60 * 5)
                 continue
-
-            logger.info(f"\n🤖 generate ground_truth: {ground_truth}")
+    
+            end_time = time.perf_counter()
+            ground_cost = end_time - start_time
+            logger.info(f"\n🤖 generate ground_truth: {ground_truth} cost: {ground_cost}s", traceId=trace_id)
 
             # query all miner
             tasks = []
             uids = self.settings.miners()
+            logger.info(f"query miners: {uids}")
             for uid in uids:
                 if uid == self.uid:
                     continue
@@ -141,49 +158,77 @@ class Validator(BaseNeuron):
                     asyncio.create_task(self.query_miner(uid, question))
                 )
             responses = await asyncio.gather(*tasks)
-            logger.info(f"responses: {responses}")
 
-            # # score result
+            # # # score result
             tasks = []
             for r in responses:
                 tasks.append(
                     asyncio.create_task(self.get_score(ground_truth, r))
                 )
             scores = await asyncio.gather(*tasks)
-            scores = [float(s) for s in scores]
-            logger.info(f"score result: {scores}")
+            truth_scores = [float(s) for s in scores]
+            logger.info(f" ground_truth scores: {truth_scores}")
 
-            # # keep score 
-            self.set_weights(uids, scores)
+            elapse_weights = [get_elapse_weight(r.elapsed_time) for r in responses]
+            logger.info(f" elapse_weights: {elapse_weights}")
+
+            weighted_scores = [s * w for s, w in zip(truth_scores, elapse_weights)]
+            logger.info(f" zip scores: {weighted_scores}")
+
+            # # # keep score 
+            self.set_weights(uids, weighted_scores)
 
             await asyncio.sleep(60 * 5)
 
     async def generate_ground_truth(self, question: str):
-        response = await self.exampleAgent.query(question)
-        return response
+        try:
+            # response = await self.non_stream_chat_completion(
+            #     self.server_agent,
+            #    [{"role": "user", "content": question}],
+            #     ChatCompletionRequest(
+            #         messages=[{"role": "user", "content": question}],
+            #         model="gpt-4o",
+            #     )
+            # )
+            # logger.info(f"Generated ground truth response: {response.choices[0].message.content}")
+            # return response.choices[0].message.content
+
+            response = await self.server_agent.query_no_stream(question)
+            logger.info(f"Generated ground truth response: {response}")
+            # todo: deal response
+            return response.get('messages', [])[-1].content
+            
+
+        except Exception as e:
+            logger.error(f"Error generating ground truth: {e}")
+        return ''
 
     async def query_miner(self, uid: int, question: str):
         try:
-            synapse = SyntheticNonStreamSynapse(question=question)
-            response = await self.dendrite.forward(
+            start_time = time.perf_counter()
+            synapse = SyntheticNonStreamSynapse(projectId=cid, question=question)
+            r = await self.dendrite.forward(
                 axons=self.settings.metagraph.axons[uid],
                 synapse=synapse,
                 deserialize=False,
                 timeout=60*3,
             )
-            logger.info(f"query_miner miner {uid}, question: {question} response: {response}")
-
-            return response.response
+            end_time = time.perf_counter()
+            synapse.response = r.response
+            logger.info(f"query_miner miner {uid}, question: {question} response: {synapse.response}, cost: {end_time - start_time}")
+            synapse.elapsed_time = end_time - start_time
+            return synapse
 
         except Exception as e:
             logger.warning(f"Failed to query miner {uid}: {e}")
             return ''
 
-    async def get_score(self, ground_truth: str, miner_answer: str):
+    async def get_score(self, ground_truth: str, miner_synapse: SyntheticNonStreamSynapse):
         question_prompt = SCORE_PROMPT.format(
             ground_truth=ground_truth, 
-            miner_answer=miner_answer
+            miner_answer=miner_synapse.response
         )
+        # logger.debug(f"Generated question prompt for get_score: {question_prompt}")
         summary_response = self.llm.invoke([HumanMessage(content=question_prompt)])
         logger.info(f"\n🤖 LLM get_score: {summary_response.content}")
         return summary_response.content
