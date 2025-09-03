@@ -223,8 +223,6 @@ Balance:
 ✅ Registered on netuid 2 with UID 2 
 ```
 
-
-
 # 6、Run hermes
 
 1、clone
@@ -239,10 +237,7 @@ Balance:
 (env_test) [env_test] git checkout feat/develop
 
 (env_test) [network-hermes-subnet] uv sync
-
 ```
-
-
 
 2、modify path：
 
@@ -258,11 +253,27 @@ sys.path.append(os.path.abspath("/Users/demon/Desktop/work/onf/subql-graphql-age
 ...
 ```
 
+3、`subql-graphql-agent`add a function.
 
+navigate to`subql-graphql-agent/examples/server.py`
 
+```python
+class GraphQLAgent:
+    """GraphQL agent for a specific SubQuery project."""
 
+    ...
 
-3、run validator：
+    async def query_no_stream(self, question):
+        response = await self.executor.ainvoke(
+            {"messages": [{"role": "user", "content": question}]},
+            config={
+                "recursion_limit": 25,
+            }
+        )
+        return response
+```
+
+4、run validator：
 
 * add `.env.validator` file
 
@@ -279,6 +290,13 @@ PORT=8085
 # change
 BOARD_SERVICE=http://192.168.156.91:3000
 OPENAI_API_KEY=sk-xx
+
+
+# for graphql agent & synthetic challenge
+LLM_MODEL=gpt-5
+
+# for score
+SCORE_LLM_MODEL=o3
 ```
 
 * run：
@@ -287,9 +305,7 @@ OPENAI_API_KEY=sk-xx
 (env_test) [network-hermes-subnet] python -m neurons.validator
 ```
 
-
-
-4、run miner：
+5、run miner：
 
 * add `.env.miner` file
 
@@ -304,8 +320,15 @@ EXTERNAL_IP=192.168.1.60
 PORT=8086
 
 # change
+BOARD_SERVICE=http://192.168.156.91:3000
 OPENAI_API_KEY=sk-xx
 
+
+# miner self-owned agent
+MINER_LLM_MODEL=gpt-4o-mini
+
+# for fallback graphql agent
+LLM_MODEL=gpt-4o
 ```
 
 * run：
@@ -313,7 +336,3 @@ OPENAI_API_KEY=sk-xx
 ```shell
 (env_test) [network-hermes-subnet] python -m neurons.miner
 ```
-
-
-
-
