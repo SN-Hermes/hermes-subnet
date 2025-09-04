@@ -14,15 +14,11 @@ The `SN Hermes` incentive system consists of two primary components: the FactorS
 
 Upon receiving miner responses, validators use their own standard answer generation time as the baseline reference. The weight decreases quadratically based on response time deviation from this benchmark.
 
-$$
-w = \frac{1}{1 + \left(\frac{\text{elapsed\_time}}{\text{ground\_truth\_cost}}\right)^2}
-$$
+<img title="" src="https://latex.codecogs.com/svg.latex?w%20=%20\frac{1}{1%20+%20\left(\frac{elapsed\_time}{ground\_truth\_cost}\right)^2}" alt="" data-align="center">
 
 
 
 **Final Score Calculation**
-
-Final Score = FactorScore × Elapsed Time Weight
 
 $$
 \text{Final Score} = \text{FactorScore} \times \text{Elapsed Time Weight}
