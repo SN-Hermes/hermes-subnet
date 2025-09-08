@@ -17,7 +17,7 @@ If you are looking for guidance on local testing, please refer to the [local run
 
 # Validator
 
-Operating a validator node requires dedicated hardware and software resources. Validators play a critical role in the **SN SubQuery** network by:
+Operating a validator node requires dedicated hardware and software resources. Validators play a critical role in the **SN SubQuery Hermes** network by:
 
 - Generating synthetic challenges
 - Evaluating and scoring miner performance
@@ -43,7 +43,7 @@ curl -LsSf https://astral.sh/uv/install.sh | sh
 uv python install 3.13
 ```
 
-2、clone `SN SubQuery`
+2、clone `SN SubQuery Hermes`
 
 ```bash
 git clone git@github.com:subquery/network-hermes-subnet.git
@@ -80,14 +80,14 @@ btcli wallet new_coldkey --wallet.name validator
 btcli wallet new_hotkey --wallet.name validator --wallet.hotkey default
 ```
 
-3、Register in `SN SubQuery`
+3、Register in `SN SubQuery Hermes`
 
 ```bash
 (network-hermes-subnet) % 
 btcli subnet register --wallet.name validator --wallet.hotkey default
 ```
 
-If the registration is successful, you will receive a **UID**, which represents your hotkey slot in `SN SubQuery`.
+If the registration is successful, you will receive a **UID**, which represents your hotkey slot in `SN SubQuery Hermes`.
 
 **Note:** This operation requires a burn fee. Make sure your cold wallet has a sufficient TAO balance.
 
@@ -95,7 +95,7 @@ If the registration is successful, you will receive a **UID**, which represents 
 
 A validator’s stake is a crucial metric for Extraction in Bittensor. To qualify as a valid validator, your wallet must hold a sufficient stake.
 
-<del> In `SN SubQuery`, at least **200 TAO** must be staked to register as a valid validator. </del>
+<del> In `SN SubQuery Hermes`, at least **200 TAO** must be staked to register as a valid validator. </del>
 
 As an option, you may perform a **self-stake**:
 
@@ -125,7 +125,7 @@ SUBTENSOR_NETWORK=finney
 WALLET_NAME=validator
 HOTKEY=default
 
-# SN SubQuery NETUID
+# SN SubQuery Hermes NETUID
 NETUID=10
 
 # Your public IP address

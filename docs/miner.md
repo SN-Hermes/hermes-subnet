@@ -19,9 +19,9 @@ If you are looking for guidance on local testing, please refer to the [local run
 
 # Miner
 
-Miners in our system are not traditional Bitcoin-style mining nodes. Instead, they operate at the foundational layer of the `SN SubQuery` service chain, acting as the final destination for all service requests and forming the core infrastructure of `SN SubQuery`. This role highlights the critical importance of miners within the ecosystem.
+Miners in our system are not traditional Bitcoin-style mining nodes. Instead, they operate at the foundational layer of the `SN SubQuery Hermes` service chain, acting as the final destination for all service requests and forming the core infrastructure of `SN SubQuery Hermes`. This role highlights the critical importance of miners within the ecosystem.
 
-In `SN SubQuery`, miners are rewarded based on their performance in responding to synthetic challenges. To maximize profitability, miners are expected to engage in **continuously optimizing** response speed while keeping high factual accuracy.
+In `SN SubQuery Hermes`, miners are rewarded based on their performance in responding to synthetic challenges. To maximize profitability, miners are expected to engage in **continuously optimizing** response speed while keeping high factual accuracy.
 
 If you are familiar to bittensor subnet set up already, skip to [Optimize Miner Rewards](#optimise-miner-rewards).
 
@@ -43,7 +43,7 @@ curl -LsSf https://astral.sh/uv/install.sh | sh
 uv python install 3.13
 ```
 
-2、clone `SN SubQuery`
+2、clone `SN SubQuery Hermes`
 
 ```bash
 git clone git@github.com:subquery/network-hermes-subnet.git
@@ -80,14 +80,14 @@ btcli wallet new_coldkey --wallet.name miner
 btcli wallet new_hotkey --wallet.name miner --wallet.hotkey default
 ```
 
-3、Register in `SN SubQuery`
+3、Register in `SN SubQuery Hermes`
 
 ```bash
 (network-hermes-subnet) % 
 btcli subnet register --wallet.name miner --wallet.hotkey default
 ```
 
-If the registration is successful, you will receive a **UID**, which represents your hotkey slot in `SN SubQuery`.
+If the registration is successful, you will receive a **UID**, which represents your hotkey slot in `SN SubQuery Hermes`.
 
 **Note:** This operation requires a burn fee. Make sure your cold wallet has a sufficient TAO balance.
 
@@ -109,7 +109,7 @@ SUBTENSOR_NETWORK=finney
 WALLET_NAME=miner
 HOTKEY=default
 
-# SN SubQuery NETUID
+# SN SubQuery Hermes NETUID
 NETUID=10
 
 # Your public IP address
