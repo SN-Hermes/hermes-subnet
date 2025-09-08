@@ -103,8 +103,7 @@ As an option, you may perform a **self-stake**:
 (network-hermes-subnet) % 
 btcli stake add \
   --wallet.name validator \
-  --wallet.hotkey default \
-  --subtensor.chain_endpoint ws://127.0.0.1:9944
+  --wallet.hotkey default
 ```
 
 ## Running a Validator

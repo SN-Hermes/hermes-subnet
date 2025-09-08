@@ -34,9 +34,9 @@ from common.project_manager import ProjectManager
 from common.prompt_template import SCORE_PROMPT
 from common.protocol import SyntheticNonStreamSynapse
 import common.utils as utils
-from herms.validator.question_generator import question_generator
-from herms.validator.api import app
-from herms.base import BaseNeuron
+from hermes.validator.question_generator import question_generator
+from hermes.validator.api import app
+from hermes.base import BaseNeuron
 import agent.graphql_agent as subAgent
 
 

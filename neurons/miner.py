@@ -30,7 +30,7 @@ from langgraph.graph import StateGraph, MessagesState, START, END
 from agent.agent_zoo import AgentZoo
 from common.protocol import CapacitySynapse, OrganicNonStreamSynapse, OrganicStreamSynapse, SyntheticNonStreamSynapse, SyntheticSynapse, SyntheticStreamSynapse
 from common.timer import Timer
-from herms.base import BaseNeuron
+from hermes.base import BaseNeuron
 
 import agent.graphql_agent as subAgent
 from common.project_manager import ProjectManager

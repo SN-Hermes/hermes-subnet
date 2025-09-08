@@ -70,24 +70,3 @@ class QuestionGenerator:
 
 
 question_generator = QuestionGenerator(max_history=5)
-
-if __name__ == "__main__":
-    import os
-    import json
-
-    file = '/Users/demon/Desktop/work/onf/network-hermes-subnet/projects/miner/QmQqqmwwaBben8ncfHo3DMnDxyWFk5QcEdTmbevzKj7DBd/config.json'
-    with open(file, 'r', encoding='utf-8') as f:
-        entity_schema = f.read()
-        config = json.loads(entity_schema)
-        entity_schema = config.get("schema_content", "")
-
-    os.environ["OPENAI_API_KEY"] = "sk-"
-    model_name = os.getenv("LLM_MODEL", "gpt-5")
-    llm = ChatOpenAI(
-        model=model_name,
-        temperature=1
-    )
-
-    for _ in range(3):
-        q = question_generator.generate_question("project_1", entity_schema, llm)
-        print("generated question:", q)
