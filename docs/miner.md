@@ -182,11 +182,11 @@ There are two ways to do such and earn more rewards than competing miners:
 
 Go to the [board](https://subnet.subquery.network) and find the selected project for miners to work on.
 
-![board ui for subnet](imgs/board_ui.pngi.png)
+![board ui for subnet](imgs/board_ui.png)
 
 Click to understand the project's schema and data, find the graphql endpoint and test queries in the playground.
 
-![project_detail_page.png](imgs/project_detail_page.pnge.png)
+![project_detail_page.png](imgs/project_detail_page.png)
 
 ### 2. Run miner
 ```
@@ -215,7 +215,7 @@ The directory structure looks like this:
 
 and miner can see what kind of challenges it is receiving:
 
-![](imgs/miner_1.pngpng)
+![](imgs/miner_1.png)
 
 ### 3. Wire tools
 Create a `tools.py` file in the project folder. The tools should be exported in the following format:
