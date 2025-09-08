@@ -107,7 +107,7 @@ class Validator(BaseNeuron):
         await self.project_manager.pull()
 
         self.server_agent = subAgent.initServerAgentWithConfig(self.project_manager.get_project(SUBQL_CID))
-        self.non_stream_chat_completion = subAgent.non_stream_chat_completion
+        # self.non_stream_chat_completion = subAgent.non_stream_chat_completion
 
     async def serve_api(self):
         try:

@@ -81,7 +81,7 @@ if __name__ == "__main__":
         config = json.loads(entity_schema)
         entity_schema = config.get("schema_content", "")
 
-    os.environ["OPENAI_API_KEY"] = "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"
+    os.environ["OPENAI_API_KEY"] = "sk-"
     model_name = os.getenv("LLM_MODEL", "gpt-5")
     llm = ChatOpenAI(
         model=model_name,
