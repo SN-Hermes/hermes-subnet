@@ -88,7 +88,8 @@ class ProjectManager:
     target_dir: Path | None = None
 
     def __init__(self, target_dir: Path | None = None):
-        self.target_dir = target_dir
+        if target_dir is not None:
+            self.target_dir = Path(target_dir)
 
     async def pull(self):
         """pull projects from board service."""
@@ -121,15 +122,20 @@ class ProjectManager:
     def get_project(self, cid: str) -> ProjectConfig:
         return self.projects_config.get(cid)
 
-    async def register_project(self, cid: str, endpoint: str) -> ProjectConfig:
+    async def pull_manifest(self, cid: str) -> Dict:
         try:
-            # Fetch manifest from IPFS using cat API
-            logger.info(f"Fetching project manifest for CID: {cid}")
+            logger.info(f"Fetching manifest for CID: {cid}")
             manifest_content = await fetch_from_ipfs(cid)
             try:
                 manifest = yaml.safe_load(manifest_content)
             except yaml.YAMLError:
                 manifest = json.loads(manifest_content)
+            return manifest
+        except Exception as e:
+            raise RuntimeError(f"Failed to pull manifest {cid}: {str(e)}")
+
+    async def pull_schema(self, manifest: Dict) -> str:
+        try:
             # Handle different schema path formats
             schema_info = manifest.get('schema', {})
             if isinstance(schema_info, dict):
@@ -165,6 +171,16 @@ class ProjectManager:
                 schema_path = str(schema_info) if schema_info else 'schema.graphql'
                 logger.debug(f"Fetching schema file: {schema_path}")
                 schema_content = await fetch_from_ipfs(cid, schema_path)
+
+            return schema_content
+        except Exception as e:
+            raise RuntimeError(f"Failed to pull schema: {str(e)}")
+
+
+    async def register_project(self, cid: str, endpoint: str) -> ProjectConfig:
+        try:
+            manifest = await self.pull_manifest(cid)
+            schema_content = await self.pull_schema(manifest)
 
             llm_analysis = await self.analyze_project_with_llm(manifest, schema_content)
 
@@ -361,14 +377,3 @@ Make each capability very specific to the entities found in the schema."""
         file = dir / "config.json"
         with open(file, "w") as f:
             json.dump(asdict(config), f, indent=2)
-    
-
-# projectManager = ProjectManager()
-
-if __name__ == "__main__":
-    projectManager = ProjectManager()
-    asyncio.run(projectManager.pull())
-
-    logger.info(f"Project projects: {projectManager.projects}")
-    logger.info(f"\n\n")
-    logger.info(f"Project projects_config: {projectManager.projects_config}")

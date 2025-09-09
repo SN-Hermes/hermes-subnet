@@ -110,7 +110,7 @@ class Validator(BaseNeuron):
         logger.info(f"Using LLM model: {score_model_name} for scoring")
 
         current_dir = Path(__file__).parent
-        project_dir = current_dir.parent / "projects" / "validator"
+        project_dir = current_dir.parent / "projects" / self.role
         self.project_manager = ProjectManager(project_dir)
         await self.project_manager.pull()
 

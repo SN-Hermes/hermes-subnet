@@ -4,9 +4,9 @@ from collections import deque
 import difflib
 
 from langchain_openai import ChatOpenAI
-from loguru import logger
 
-from common.prompt_template import SYNTHETIC_PROMPT
+from agent.subquery_graphql_agent.base import GraphQLAgent
+from common.prompt_template import SYNTHETIC_PROMPT, SYNTHETIC_PROMPT_SUBQL
 
 class QuestionGenerator:
     max_history: int
@@ -38,12 +38,28 @@ class QuestionGenerator:
         
         recent_questions = self.format_history_constraint(self.project_question_history[project_cid])
         prompt = SYNTHETIC_PROMPT.format(entity_schema=entity_schema, recent_questions=recent_questions)
+        # prompt = SYNTHETIC_PROMPT_SUBQL.format(entity_schema=entity_schema, recent_questions=recent_questions)
         
         # logger.debug(f"Generated prompt for project {project_cid}:\n{prompt}")
         
         response = llm.invoke([HumanMessage(content=prompt)])
         question = response.content.strip()
         
+        self.add_to_history(project_cid, question)
+        return question
+
+    async def generate_question_with_agent(self, project_cid: str, entity_schema: str, server_agent: GraphQLAgent) -> str:
+        if project_cid not in self.project_question_history:
+            self.project_question_history[project_cid] = deque(maxlen=self.max_history)
+        
+        recent_questions = self.format_history_constraint(self.project_question_history[project_cid])
+        prompt = SYNTHETIC_PROMPT.format(entity_schema=entity_schema, recent_questions=recent_questions)
+
+
+        response = await server_agent.query_no_stream(prompt)
+        # logger.info(f"Agent response: {response}")
+
+        question =  response.get('messages', [])[-1].content
         self.add_to_history(project_cid, question)
         return question
 

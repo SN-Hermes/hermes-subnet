@@ -22,7 +22,6 @@ import time
 from typing import Dict
 import bittensor as bt
 from loguru import logger
-from ollama import AsyncClient
 from bittensor.core.stream import StreamingSynapse
 from langgraph.graph.state import CompiledStateGraph
 from langgraph.graph import StateGraph, MessagesState, START, END
@@ -73,14 +72,6 @@ class Miner(BaseNeuron):
         )
 
         self.axon.attach(
-            forward_fn=self.forward,
-        )
-
-        self.axon.attach(
-            forward_fn=self.forward_stream,
-        )
-
-        self.axon.attach(
             forward_fn=self.forward_organic_stream,
         )
 
@@ -115,43 +106,6 @@ class Miner(BaseNeuron):
         ]
         await asyncio.gather(*tasks)
 
-    async def forward(self, synapse: SyntheticSynapse) -> SyntheticSynapse:
-        logger.info(f"\n🤖 [Miner] Received question: {synapse.question}")
-        ollama_client = AsyncClient(host='http://localhost:11434')
-
-        message = {'role': 'user', 'content': synapse.question}
-        iter = await ollama_client.chat(model='llama3.2', messages=[message], stream=True)
-        async for part in iter:
-            logger.info(f"\n🤖 [Miner] Agent: {part}")
-
-        synapse.response = {"message": 'ok'}
-        return synapse
-
-    async def forward_stream(self, synapse: SyntheticStreamSynapse) -> StreamingSynapse.BTStreamingResponse:
-        from starlette.types import Send
-        logger.info(f"\n🤖 [Miner] Received stream question: {synapse.question}")
-
-        message = {'role': 'user', 'content': synapse.question}
-        async def token_streamer(send: Send):
-            ollama_client = AsyncClient(host='http://localhost:11434')
-            iter = await ollama_client.chat(model='llama3.2', messages=[message], stream=True)
-            async for part in iter:
-                logger.info(f"\n🤖 [Miner] Agent: {part}")
-                text = part["message"]["content"] if "message" in part else str(part)
-                await send({
-                    "type": "http.response.body",
-                    "body": text.encode("utf-8"),
-                    "more_body": True
-                })
-                await asyncio.sleep(0.5)  # Simulate some delay
-            await send({
-                "type": "http.response.body",
-                "body": b"",
-                "more_body": False
-            })
-
-        return synapse.create_streaming_response(token_streamer)
-    
     async def forward_organic_stream(self, synapse: OrganicStreamSynapse) -> StreamingSynapse.BTStreamingResponse:
         from starlette.types import Send
         logger.info(f"\n🤖 [Miner] Received organic stream: {synapse.completion}")
@@ -249,7 +203,7 @@ class Miner(BaseNeuron):
 
     async def refresh_agents(self):
         current_dir = Path(__file__).parent
-        project_dir = current_dir.parent / "projects" / "miner"
+        project_dir = current_dir.parent / "projects" / self.role
         pm = ProjectManager(project_dir)
         await pm.pull()
 
