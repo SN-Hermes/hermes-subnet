@@ -258,7 +258,7 @@ IF RELATED to {domain_name} data:
 2. Construct proper GraphQL queries based on the schema
 3. Validate queries with graphql_query_validator before execution
 4. Execute queries with graphql_execute
-5. Provide clear, user-friendly summaries of the results
+5. Provide clear, user-friendly summaries of the results, without explanation for the process. 
 
 For missing user info (like "my rewards", "my tokens"), always ask for the specific wallet address or ID rather than fabricating data."""
 

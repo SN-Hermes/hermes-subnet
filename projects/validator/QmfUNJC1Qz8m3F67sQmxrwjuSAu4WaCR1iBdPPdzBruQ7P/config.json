@@ -2398,19 +2398,19 @@
     },
     "specVersion": "1.0.0"
   },
-  "domain_name": "Unknown Project \u2014 SubQuery Projects & Deployments Index",
+  "domain_name": "SubQuery Indexing: SQT Staking, Deployments, Rewards & Service Agreements (Network 8453)",
   "domain_capabilities": [
-    "Query Project entities and their relationships (fields: id, owner, type, metadata, deploymentId, deploymentMetadata, createdTimestamp, updatedTimestamp, createdBlock, lastEvent) and enumerate associated Deployments",
-    "Query Deployment entities and their related IndexerDeployment and Plan records (fields: id, metadata, project, createdTimestamp, createdBlock, lastEvent) to inspect code versions and which indexers/operators are running them",
-    "Analyze reward and allocation metrics across projects and deployments (totalReward, totalBoost, totalAllocation, boostAllocationRatio) to compare consumer boost vs operator+delegator allocations and evaluate distribution ratios",
-    "Monitor lifecycle and event activity for projects and deployments (createdTimestamp, updatedTimestamp, createdBlock, lastEvent) and filter by enums such as ProjectType to track deployment versioning and operator rollout"
+    "Query Project, Deployment and Indexer relationships (Project -> deployments, Deployment -> indexers via IndexerDeployment, Plan/PlanTemplate and ServiceAgreement links)",
+    "Analyze era-based staking and reward metrics (Era, IndexerReward, EraReward, IndexerStake, IndexerStakeSummary, EraIndexerApy, EraDelegatorApy and APY/trend calculations)",
+    "Track token and payment activity (SQT Transfer, TokenHolder, Sqtoken supply, Airdrop/AirdropUser, ConsumerQuerySpent, ConsumerQueryReward, Order/Withdraw events, StateChannel spending and OrderSpent)",
+    "Monitor operational and governance events (IndexerAllocation/IndexerAllocationSummary, IndexerAllocationOverflow, IndexerMissedLabor, AcceptedOffer/Offer lifecycle, Controller/ConsumerController changes, Disputes and Withdrawl operations)"
   ],
-  "decline_message": "I'm specialized in Unknown Project data queries. I can help you with Project and Deployment metadata, reward and boost allocation metrics (totalReward, totalBoost, totalAllocation, boostAllocationRatio), indexer deployment and Plan relationships, and lifecycle/event timestamps (createdTimestamp, updatedTimestamp, lastEvent). I cannot assist with raw Ethereum transaction contents, private key management, or blockchain analysis outside the scope of this SubQuery index. Please ask me about Unknown Project data instead.",
+  "decline_message": "I'm specialized in Unknown Project data queries for the SubQuery/SQT ecosystem on Network 8453. I can help you explore Projects, Deployments, Indexers, staking/delegation snapshots, era rewards/APY, ServiceAgreements, StateChannels, token transfers, airdrops and offer/acceptance activity. I cannot assist with wallet private keys, transaction signing, or providing financial/advisory services outside the Unknown Project dataset. Please ask me about Unknown Project data instead.",
   "suggested_questions": [
-    "Show me the most recently created Project records and their totalReward and totalBoost values",
-    "Which Projects have the highest totalReward or highest boostAllocationRatio?",
-    "List Deployments for a given Project ID and show associated indexer counts, createdTimestamp, and lastEvent",
-    "Can you show a sample GraphQL query to fetch a Project by id with its Deployments and reward/allocation fields?"
+    "Show me recent Transfer events for the SQT token and the top token holders by balance.",
+    "Which indexers had the highest totalReward or totalStake in the latest era, and what were their EraIndexerApy values?",
+    "How many ServiceAgreements started or expired in the last 24 hours, and which deployments are most used by agreements or StateChannels?",
+    "Can you provide a sample GraphQL query to fetch EraReward records and EraIndexerApy for a specific indexer and era?"
   ],
   "authorization": null
 }

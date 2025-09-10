@@ -2398,19 +2398,27 @@
     },
     "specVersion": "1.0.0"
   },
-  "domain_name": "SubQuery Project Indexing",
+  "domain_name": "SubQuery Network Indexing Data",
   "domain_capabilities": [
-    "Query Project data and relationships",
-    "Analyze reward distribution metrics and trends",
-    "Track deployment events and updates",
-    "Monitor project and deployment creation activities"
+    "Query indexer and delegator staking data and reward distributions",
+    "Analyze project deployments and service agreements across the network",
+    "Track SQT token transfers, holder balances, and price oracle data",
+    "Monitor era-based reward distributions and APY calculations",
+    "Examine state channels, service agreements, and consumer spending patterns",
+    "Investigate dispute cases and slashing events in the network",
+    "Track airdrop distributions and claim status for eligible users",
+    "Analyze subnet governance voting activities and project participation"
   ],
-  "decline_message": "I'm specialized in SubQuery Project Indexing data queries. I can help you with project and deployment data, but I cannot assist with unrelated topics. Please ask me about SubQuery Project Indexing data instead.",
+  "decline_message": "I'm specialized in SubQuery Network indexing data queries. I can help you with indexer operations, staking rewards, service agreements, and token economics, but I cannot assist with [their topic]. Please ask me about SubQuery Network data instead.",
   "suggested_questions": [
-    "Show me recent project creation events",
-    "What are the top projects by totalReward?",
-    "How many deployments happened in the last day?",
-    "Can you show me a sample GraphQL query for Project?"
+    "Show me recent indexer deployments and their service status",
+    "What are the top indexers by total stake and delegation amounts?",
+    "How many service agreements were created in the last week?",
+    "Can you show me a sample GraphQL query for tracking era rewards?",
+    "What is the current APY for top-performing indexers?",
+    "Show me recent SQT token transfers and holder balance changes",
+    "How many active state channels are currently running?",
+    "What are the most popular project deployments by consumer spending?"
   ],
   "authorization": null
 }

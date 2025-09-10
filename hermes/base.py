@@ -7,7 +7,7 @@ from typing import Any
 from loguru import logger
 from bittensor.core.extrinsics.serving import serve_extrinsic
 from common.settings import Settings
-from common.utils import try_get_external_ip
+from common.utils import try_get_external_ip, configure_loguru
 import agent.graphql_agent as subAgent
 
 
@@ -28,6 +28,9 @@ class BaseNeuron(ABC):
 
 
     def __init__(self):
+        # Configure loguru first before any logging
+        configure_loguru()
+        
         Settings.load_env_file(self.role)
         self.settings = Settings()
         self.should_exit = False

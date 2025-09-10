@@ -53,10 +53,6 @@ class Miner(BaseNeuron):
     def __init__(self):
         super().__init__()
         
-        # Configure loguru to intercept and control third-party logging  
-        import common.utils as utils
-        utils.configure_loguru()
-        
         self.agents = {}
 
 

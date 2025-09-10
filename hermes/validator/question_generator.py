@@ -1,3 +1,4 @@
+import os
 from typing import Dict
 from langchain.schema import HumanMessage
 from collections import deque
@@ -37,8 +38,13 @@ class QuestionGenerator:
             self.project_question_history[project_cid] = deque(maxlen=self.max_history)
         
         recent_questions = self.format_history_constraint(self.project_question_history[project_cid])
-        prompt = SYNTHETIC_PROMPT.format(entity_schema=entity_schema, recent_questions=recent_questions)
-        # prompt = SYNTHETIC_PROMPT_SUBQL.format(entity_schema=entity_schema, recent_questions=recent_questions)
+        
+        # Use environment variable to choose prompt template
+        demo_mode = os.getenv("DEMO_MODE", "false").lower() == "true"
+        if demo_mode:
+            prompt = SYNTHETIC_PROMPT_SUBQL.format(entity_schema=entity_schema, recent_questions=recent_questions)
+        else:
+            prompt = SYNTHETIC_PROMPT.format(entity_schema=entity_schema, recent_questions=recent_questions)
         
         # logger.debug(f"Generated prompt for project {project_cid}:\n{prompt}")
         

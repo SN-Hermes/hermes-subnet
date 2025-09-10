@@ -1,102 +1,11 @@
 from langchain.prompts import PromptTemplate
 
 
-synthetic_challenge_template_V1 = """
-You are a question generator for database schema analysis.
-
-Background Context:
-{entity_schema}
-
-CRITICAL CONSTRAINT - MUST AVOID REPETITION:
-{recent_questions}
-
-Your task:
-1. Carefully read and understand the schema, including types, queries, mutations, and relationships.
-2. Generate ONE natural question that a user might ask based on this file.
-3. Output only the question, nothing else.
-4. Ask for ONLY ONE metric or value - do not use "and" or "or" to combine multiple questions.
-5. Do not include explanations, answers, or more than one question.
-6. Ask about what CAN be queried, not specific made-up scenarios.
-7. Focus on query patterns and schema structure, not fictional data.
-8. NEVER fabricate wallet addresses, entity IDs, or any specific data values.
-9. ABSOLUTELY DO NOT generate questions that are similar to the ones listed above in CRITICAL CONSTRAINT section.
-10. IMPORTANT: Do not ask questions that require additional user input or context to be answerable. Avoid questions with unclear references like "my agreement", "my rewards", or "my tokens" without specifying which specific entity is being referenced.
-11. Verify that the question can be answered by examining the available fields, types, and relationships in the schema before generating it.
-12. Do NOT ask hypothetical questions (like "What would happen if...", "How might...", "What could...", "For a specified ..."). Only ask direct factual questions about actual data.
-13. Do NOT ask question which has placeholders in the question.
-14. CRITICAL: Ask business-oriented questions that real users would ask, DO NOT mention any specific data structures or entity names. Real users don't know about backend schema details. Instead, ask about business concepts.
-Output: [Question only, no explanations]
-"""
-
-
-synthetic_challenge_template_V2 = """
-You are a question generator for database schema analysis.
-
-Background Context:
-{entity_schema}
-
-CRITICAL CONSTRAINT - MUST AVOID REPETITION:
-{recent_questions}
-
-Your task:
-1. Ask about a specific numerical value, metric, or calculation.
-2. Carefully read and understand the schema, including types, queries, mutations, and relationships.
-3. Generate ONE natural question that a user might ask based on this file.
-4. Output only the question, nothing else.
-5. Ask for ONLY ONE metric or value - do not use "and" or "or" to combine multiple questions.
-6. Do not include explanations, answers, or more than one question.
-7. Ask about what CAN be queried, not specific made-up scenarios.
-8. Focus on query patterns and schema structure, not fictional data.
-9. NEVER fabricate wallet addresses, entity IDs, or any specific data values.
-10. ABSOLUTELY DO NOT generate questions that are similar to the ones listed above in CRITICAL CONSTRAINT section.
-
-
-Output: [Question only, no explanations]
-"""
-
-
-# llm / agent 生成问题效果一样, 都是比较级比较多
-synthetic_challenge_template_V3 = """
-You are a question generator for database schema analysis.
-
-Background Context:
-{entity_schema}
-
-
-Task: Generate ONE natural question about numerical data from the schema above.
-
-Definitions:
-- "Numerical value" means a single count, sum, average, percentage, or other numeric metric.
-- Each question must involve exactly ONE metric.
-- If the output would be a list, show only the first 3 results.
-
-
-
-CRITICAL CONSTRAINT - MUST AVOID REPETITION:
-{recent_questions}
-
-Your task:
-1. Ask about a specific numerical value, metric, or calculation.
-2. Carefully read and understand the schema, including types, queries, mutations, and relationships.
-3. Each question must focus on a single data point or calculation
-5. Ask for ONLY ONE metric or value - do not use "and" or "or" to combine multiple questions.
-6. Do not include explanations, answers, or more than one question.
-7. Ask about what CAN be queried, not specific made-up scenarios.
-8. Focus on query patterns and schema structure, not fictional data.
-9. NEVER fabricate wallet addresses, entity IDs, or any specific data values.
-10. ABSOLUTELY DO NOT generate questions that are similar to the ones listed above in CRITICAL CONSTRAINT section.
-
-
-Output: [Question only, no explanations]
-"""
-
-# highest、total 问题比较多
 synthetic_challenge_template_V4 = """
-You are a question generator for database schema analysis.
+You are a question generator base on given graphql schema.
 
-Background Context:
+Graphql Schema:
 {entity_schema}
-
 
 Task: Generate ONE natural question about numerical data from the schema above.
 
@@ -120,9 +29,13 @@ Your task:
 5. Ask for ONLY ONE metric or value - do not use "and" or "or" to combine multiple questions.
 6. Do not include explanations, answers, or more than one question.
 7. Ask about what CAN be queried, not specific made-up scenarios.
-8. Focus on query patterns and schema structure, not fictional data.
-9. NEVER fabricate wallet addresses, entity IDs, or any specific data values.
-10. ABSOLUTELY DO NOT generate questions that are similar to the ones listed above in CRITICAL CONSTRAINT section.
+8. NEVER fabricate wallet addresses, entity IDs, or any specific data values.
+9. ABSOLUTELY DO NOT generate questions that are similar to the ones listed above in CRITICAL CONSTRAINT section.
+10. IMPORTANT: Do not ask questions that require additional user input or context to be answerable. Avoid questions with unclear references like "my agreement", "my rewards", or "my tokens" without specifying which specific entity is being referenced.
+11. Verify that the question can be answered by examining the available fields, types, and relationships in the schema before generating it.
+12. Do NOT ask hypothetical questions (like "What would happen if...", "How might...", "What could...", "For a specified ..."). Only ask direct factual questions about actual data.
+13. Do NOT ask question which has placeholders in the question.
+14. CRITICAL: Ask business-oriented questions that real users would ask, DO NOT mention any specific data structures or entity names. Real users don't know about backend schema details. Instead, ask about business concepts.
 
 
 Output: [Question only, no explanations]

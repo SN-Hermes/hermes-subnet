@@ -29,6 +29,7 @@ import uvicorn
 from uuid import uuid4
 from langchain_openai import ChatOpenAI
 from langchain.schema import HumanMessage
+from common.table_formatter import table_formatter
 
 from common.project_manager import ProjectManager
 from common.prompt_template import SCORE_PROMPT
@@ -41,7 +42,6 @@ import agent.graphql_agent as subAgent
 from hermes.validator.ema import EMAUpdater
 
 
-SUBQL_CID = 'QmfUNJC1Qz8m3F67sQmxrwjuSAu4WaCR1iBdPPdzBruQ7P'
 class Validator(BaseNeuron):
     version: str = '5'
 
@@ -65,9 +65,6 @@ class Validator(BaseNeuron):
     
     def __init__(self):
         super().__init__()
-        
-        # Configure loguru to intercept and control third-party logging
-        utils.configure_loguru()
         
         self._last_set_weight_time = time.time()
         self.ema = EMAUpdater(alpha=0.7)
@@ -127,7 +124,6 @@ class Validator(BaseNeuron):
         await self.project_manager.pull()
 
         self.init_agents()
-        # self.server_agent = subAgent.initServerAgentWithConfig(self.project_manager.get_project(SUBQL_CID))
 
     def init_agents(self):
         self.server_agents = {}
@@ -147,6 +143,8 @@ class Validator(BaseNeuron):
                 port=self.settings.port,
                 loop="asyncio",
                 reload=False,
+                log_config=None,  # Disable uvicorn's default logging config
+                access_log=False,  # Disable access logs to reduce noise
             )
             app.state.validator = self
 
@@ -166,7 +164,6 @@ class Validator(BaseNeuron):
             await asyncio.sleep(30)
 
     async def loop_query(self):
-        # entity_schema = self.project_manager.get_project(SUBQL_CID).schema_content
         await asyncio.sleep(10)
     
         while True:
@@ -186,7 +183,9 @@ class Validator(BaseNeuron):
                 # question = await question_generator.generate_question_with_agent(cid, project_config.schema_content, self.server_agents[cid])
                 trace_id = str(uuid4())
 
-                logger.info("\n🤖 generate synthetic challenge: {}", question, traceId=trace_id)
+                # Create synthetic challenge table
+                challenge_output = table_formatter.create_synthetic_challenge_table(question)
+                table_formatter.log_with_newline(challenge_output, "info", traceId=trace_id)
 
                 # generate ground truth
                 start_time = time.perf_counter()
@@ -200,7 +199,10 @@ class Validator(BaseNeuron):
             
                 end_time = time.perf_counter()
                 ground_cost = end_time - start_time
-                logger.info("\n🤖 generate ground_truth: {} cost: {}s", ground_truth, ground_cost, traceId=trace_id)
+                
+                # Create ground truth tables
+                ground_truth_output = table_formatter.create_ground_truth_tables(ground_truth, ground_cost)
+                table_formatter.log_with_newline(ground_truth_output, "info", traceId=trace_id)
 
                 logger.info(f"query miners: {uids}")
                 # query all miner
@@ -299,19 +301,24 @@ class Validator(BaseNeuron):
             )
             end_time = time.perf_counter()
             synapse.response = r.response
-            logger.info("""
-query_miner 
-  miner: {}
-  question: {}
-  answer: {}
-  ground_truth: {}
-  cost: {}s
-""", uid, question, synapse.response, ground_truth, end_time - start_time)
-            synapse.elapsed_time = end_time - start_time
+            elapsed_time = end_time - start_time
+            
+            # Check if miner provided a response
+            miner_answer = synapse.response.strip() if synapse.response and synapse.response.strip() else None
+            miner_output = table_formatter.create_miner_response_tables(
+                uid=uid,
+                question=question,
+                elapsed_time=elapsed_time,
+                miner_answer=miner_answer,
+                ground_truth=ground_truth if miner_answer else None
+            )
+            logger.info(miner_output)
+            
+            synapse.elapsed_time = elapsed_time
             return synapse
 
         except Exception as e:
-            logger.warning(f"Failed to query miner {uid}: {e}")
+            logger.warning("🔍 MINER RESPONSE [UID: {}] - ❌ Failed to query: {}", uid, e)
             return ''
 
     async def get_score(self, ground_truth: str, miner_synapse: SyntheticNonStreamSynapse):
@@ -321,7 +328,6 @@ query_miner
         )
         # logger.debug(f"Generated question prompt for get_score: {question_prompt}")
         summary_response = self.scoreLLM.invoke([HumanMessage(content=question_prompt)])
-        logger.info(f"\n🤖 LLM get_score: {summary_response.content}")
         return summary_response.content
 
     def _set_weights(self, uids: list[int], scores: list[float]):
