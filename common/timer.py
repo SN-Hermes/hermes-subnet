@@ -1,17 +1,17 @@
 
 import datetime
 import time
-from loguru import logger
 from common.table_formatter import table_formatter
 
 
 class Timer:
-    def __init__(self, label="", metadata=None):
+    def __init__(self, label="", log=None, metadata=None):
         self.response = ''
         self.label = label
         self.elapsed = 0.0
         self.metadata = metadata or {}
-    
+        self.log = log
+
     def __enter__(self):
         self.start_time = time.perf_counter()
         self.start_datetime = datetime.datetime.now()
@@ -30,5 +30,5 @@ class Timer:
         if self.response:
             # Create answer table
             output_lines.append(table_formatter.create_single_column_table("💬 Answer", self.response))
-        logger.info("\n".join(output_lines))
-        logger.info(f"""⏱️ cost: {self.final_time:.4f}s""")
+        self.log.info("\n".join(output_lines))
+        self.log.info(f"""⏱️ cost: {self.final_time:.4f}s""")

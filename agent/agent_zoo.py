@@ -5,22 +5,26 @@ import pkgutil
 import sys
 from typing import ClassVar, Dict
 import importlib
-import inspect
 from loguru import logger
-from pydantic import BaseModel
 from langchain_core.tools import BaseTool
 from langgraph.prebuilt import create_react_agent
 from langgraph.graph.state import CompiledStateGraph
+from langgraph.graph import StateGraph, MessagesState, START, END
+
 from agent.stats import ToolCountHandler
+from common.project_manager import ProjectConfig
 from common.utils import create_system_prompt
+import agent.graphql_agent as subAgent
 
 
 class AgentZoo:
     '''
     { 
-        [project_name]: {
+        [cid]: {
             tools: {},
-            agent: agent,
+            miner_agent: agent,
+            server_agent: agent,
+            agent_graph: graph,
             counter: counter,
         }
     }
@@ -30,17 +34,29 @@ class AgentZoo:
   
     @classmethod
     def load_agents(cls, projects_dir: Path) -> Dict[str, Dict[str, Dict[str, str] | CompiledStateGraph]]:
+        
+        def miner_router(state):
+            messages = state["messages"]
+            for m in messages:
+                # TODO: check tool call has real output
+                if m.type == 'ai' and len(m.tool_calls) > 0:
+                    return END
+            # TODO: trim
+            first_message = messages[0:1]
+            # return {"next": "server_agent", "state_update": {"messages": first_message}}
+            return "server_agent"
+        
         base_path = Path(projects_dir)
         for project_dir in base_path.iterdir():
             if not project_dir.is_dir():
                 continue
             
-            project_name = project_dir.name
-            if project_name == "__pycache__":
+            cid = project_dir.name
+            if cid == "__pycache__":
                 continue
 
-            project = cls.agent_configs.get(project_name)
-            prev_tools = cls.agent_configs.get(project_name, {}).get('tools', {})
+            project = cls.agent_configs.get(cid)
+            prev_tools = cls.agent_configs.get(cid, {}).get('tools', {})
             current_tools = {}
             
             relative_module_parts = project_dir.relative_to(Path(__file__).parent.parent / "projects").parts
@@ -89,48 +105,63 @@ class AgentZoo:
                     logger.warning(f"Config file not found: {config_path}")
                     config = {}
 
+                if not suc:
+                    continue
+
                 prompt = create_system_prompt(
                     domain_name=config.get("domain_name", ""),
                     domain_capabilities=config.get("domain_capabilities", []),
                     decline_message=config.get("decline_message", "")
-                ) if suc else f"You are the agent for project {project_name}."
+                ) if suc else f"You are the agent for project {cid}."
 
                 # reconstruct agent
                 model = os.environ.get("MINER_LLM_MODEL", "gpt-4o-mini")
-                logger.info(f"[AGENT] Creating agent for project {project_name} using model {model}")
 
-                agent = create_react_agent(
+                server_agent = subAgent.initServerAgentWithConfig(ProjectConfig(**config))
+                miner_agent = create_react_agent(
                     model="openai:" + model,
                     tools=tools,
-                    prompt= f"You are the agent for project {project_name}."
+                    prompt= f"You are the agent for project {cid}."
                 )
-                logger.info(f"[AGENT] load agent, Project {project_name} - tools: {[t.name for t in tools]}, Created: {[t.name for t in created]}, Updated: {[t.name for t in updated]}, Deleted: {deleted}, with prompt: {suc}")
+                logger.info(f"[AGENT] load agent, Project {cid} using model {model} - tools: {[t.name for t in tools]}, Created: {[t.name for t in created]}, Updated: {[t.name for t in updated]}, Deleted: {deleted}, with prompt: {suc}")
 
 
-                cls.agent_configs[project_name] = {
+                builder = StateGraph(MessagesState)
+                builder.add_node("miner_agent", miner_agent)
+                builder.add_node("server_agent", server_agent.executor)
+                builder.add_conditional_edges(
+                    "miner_agent",
+                    miner_router
+                )
+                builder.add_edge(START, "miner_agent")
+                multi_agent_graph = builder.compile()
+
+                cls.agent_configs[cid] = {
                     "tools": {t.name: getattr(type(t), "__version__", "0.0.0") for t in tools},
-                    "agent": agent,
+                    "miner_agent": miner_agent,
+                    "server_agent": server_agent,
+                    "agent_graph": multi_agent_graph,
                     "counter": ToolCountHandler()
                 }
             else:
-                logger.info(f"[AGENT] Project {project_name} - No changes in tools.")
+                logger.info(f"[AGENT] Project {cid} - No changes in tools.")
     
         return cls.agent_configs
 
     @classmethod
-    def get_agent(cls, project_name: str) -> CompiledStateGraph | None:
-        return cls.agent_configs.get(project_name, {}).get('agent')
+    def get_agent(cls, cid: str) -> CompiledStateGraph | None:
+        return cls.agent_configs.get(cid, {}).get('agent')
 
     @classmethod
-    def get_counter(cls, project_name: str) -> Dict[str, int] | None:
-        return cls.counter_configs.get(project_name)
+    def get_counter(cls, cid: str) -> Dict[str, int] | None:
+        return cls.counter_configs.get(cid)
 
     @classmethod
-    def remove_agent(cls, project_name: str):
-        if project_name in cls.agent_configs:
-            del cls.agent_configs[project_name]
-            del cls.counter_configs[project_name]
-            logger.info(f"[AGENT] Removed agent for {project_name}")
+    def remove_agent(cls, cid: str):
+        if cid in cls.agent_configs:
+            del cls.agent_configs[cid]
+            del cls.counter_configs[cid]
+            logger.info(f"[AGENT] Removed agent for {cid}")
 
 
 # python -m agent.agent_zoo

@@ -19,40 +19,30 @@
 import asyncio
 from pathlib import Path
 import time
-from typing import Dict
+from typing import Any, Dict
 import bittensor as bt
 from loguru import logger
 from bittensor.core.stream import StreamingSynapse
 from langgraph.graph.state import CompiledStateGraph
-from langgraph.graph import StateGraph, MessagesState, START, END
-
 from agent.agent_zoo import AgentZoo
 from common.protocol import CapacitySynapse, OrganicNonStreamSynapse, OrganicStreamSynapse, SyntheticNonStreamSynapse, SyntheticSynapse, SyntheticStreamSynapse
 from common.timer import Timer
 from hermes.base import BaseNeuron
-
 import agent.graphql_agent as subAgent
 from common.project_manager import ProjectManager
 
-
-SUBQL_CID = 'QmfUNJC1Qz8m3F67sQmxrwjuSAu4WaCR1iBdPPdzBruQ7P'
-
-def allow_all(synapse: CapacitySynapse) -> None:
-    return None
 
 class Miner(BaseNeuron):
     version: str = '5'
     axon: bt.Axon | None
     agents:  Dict[str, Dict[str, Dict[str, str] | CompiledStateGraph]] | None
-    multi_agent_graph: CompiledStateGraph | None
 
     @property
     def role(self) -> str:
         return "miner"
 
     def __init__(self):
-        super().__init__()
-        
+        super().__init__(file=f"logs/{self.role}/{time.strftime('%Y-%m-%d')}.log")
         self.agents = {}
 
 
@@ -66,6 +56,9 @@ class Miner(BaseNeuron):
             external_ip=self.settings.external_ip,
             external_port=self.settings.port
         )
+
+        def allow_all(synapse: CapacitySynapse) -> None:
+            return None
 
         self.axon.attach(
             forward_fn=self.forward_organic_stream,
@@ -127,30 +120,22 @@ class Miner(BaseNeuron):
         return synapse.create_streaming_response(token_streamer)
 
     async def forward_synthetic_non_stream(self, synapse: SyntheticNonStreamSynapse) -> SyntheticNonStreamSynapse:
-        logger.info(f"\n🤖 [Miner] Received synthetic: {synapse}")
-        projectId = synapse.projectId
+        log = logger.bind(source=synapse.dendrite.hotkey, synthetic_id=synapse.id)
 
-        agent_config = self.agents.get(projectId, {})
-        agent = agent_config.get('agent')
+        log.info(f"🤖 Received synthetic: {synapse.question}")
+        project_id = synapse.project_id
+
+        agent_config = self.agents.get(project_id, {})
+        agent_graph = agent_config.get('agent_graph')
         counter = agent_config.get('counter')
 
-        if not agent:
-            logger.warning(f"[MINER] No agent found for project {projectId}")
+        if not agent_graph:
+            log.warning(f"No agent found for project {project_id}")
             synapse.response = {"error": "No agent found"}
             return synapse
 
-        with Timer(label=f"[Miner] Generating answer for task: {synapse.id}") as t:
-            # response = await self.server_agent.query_no_stream(
-            #     synapse.question,
-            # )
-            # response = response.get('messages', [])[-1].content
-
-            # response = await agent.ainvoke(
-            #     {"messages": [{"role": "user", "content": synapse.question}]},
-            #     config={"callbacks": [counter]}
-            # )
-            # response = response.get('messages')[-1].content
-            r = await self.multi_agent_graph.ainvoke(
+        with Timer(label=f"Generating answer for task: {synapse.id}", log=log) as t:
+            r = await agent_graph.ainvoke(
                 {"messages": [{"role": "user", "content": synapse.question}]},
                 config={"callbacks": [counter]}
             )
@@ -164,14 +149,14 @@ class Miner(BaseNeuron):
 
     async def forward_organic_non_stream(self, synapse: OrganicNonStreamSynapse) -> OrganicNonStreamSynapse:
         logger.info(f"\n🤖 [Miner] Received organic non stream: {synapse}")
-        projectId = synapse.projectId
+        project_id = synapse.project_id
 
-        agent_config = self.agents.get(projectId, {})
+        agent_config = self.agents.get(project_id, {})
         agent = agent_config.get('agent')
         counter = agent_config.get('counter')
 
         if not agent:
-            logger.warning(f"[MINER] No agent found for project {projectId}")
+            logger.warning(f"[MINER] No agent found for project {project_id}")
             synapse.response = {"error": "No agent found"}
             return synapse
 
@@ -197,57 +182,55 @@ class Miner(BaseNeuron):
         }
         return synapse
 
-    async def refresh_agents(self):
+    async def invoke_server_agent(self, synapse: OrganicStreamSynapse) -> str:
+        agent_config = self.agents.get(synapse.project_id, {})
+        server_agent = agent_config.get('server_agent')
+        response = await server_agent.query_no_stream(synapse.question)
+        answer = response.get('messages')[-1].content
+        return answer
+
+    async def invoke_miner_agent(self, synapse: OrganicStreamSynapse) -> str:
+        agent_config = self.agents.get(synapse.project_id, {})
+        miner_agent = agent_config.get('miner_agent')
+        response = await miner_agent.ainvoke(
+            {"messages": [{"role": "user", "content": synapse.question}]}
+        )
+        answer = response.get('messages')[-1].content
+        return answer
+
+    def load_agents(self) -> Dict[str, Any]:
         current_dir = Path(__file__).parent
         project_dir = current_dir.parent / "projects" / self.role
         pm = ProjectManager(project_dir)
-        await pm.pull()
+        projects = pm.load()
+        return projects
 
+    async def refresh_agents(self, pull=True):
+        current_dir = Path(__file__).parent
+        project_dir = current_dir.parent / "projects" / self.role
+        pm = ProjectManager(project_dir)
+        
+        if pull:
+            await pm.pull()
+        else:
+            pm.load()
+        
         self.agents = AgentZoo.load_agents(project_dir)
 
-        self.server_agent = subAgent.initServerAgentWithConfig(pm.get_project(SUBQL_CID))
-        self.miner_agent = self.agents.get(SUBQL_CID).get('agent')
-
-        # counter = self.agents.get('QmQqqmwwaBben8ncfHo3DMnDxyWFk5QcEdTmbevzKj7DBd').get('counter')
-        # miner_agent_with_counter = self.miner_agent.with_config({"callbacks": [counter]})
-
-        def miner_router(state):
-            # logger.info(f'----min router---{state}')
-            messages = state["messages"]
-            for m in messages:
-                # TODO: check tool call has real output
-                if m.type == 'ai' and len(m.tool_calls) > 0:
-                    return END
-            
-            # TODO: trim
-            first_message = messages[0:1]
-            # return {"next": "server_agent", "state_update": {"messages": first_message}}
-            return "server_agent"
-        
-
-        builder = StateGraph(MessagesState)
-        builder.add_node("miner_agent", self.miner_agent)
-        builder.add_node("server_agent", self.server_agent.executor)
-        builder.add_conditional_edges(
-            "miner_agent",
-            miner_router
-        )
-        builder.add_edge(START, "miner_agent")
-        self.multi_agent_graph = builder.compile()
-
-        while True:
-            await asyncio.sleep(30 * 1)
-            # TODO: reconstruct multi_agent_graph
-            # self.agents = AgentZoo.load_agents(project_dir)
+        return self.agents
+        # while True:
+        #     await asyncio.sleep(30 * 1)
+        #     # TODO: reconstruct multi_agent_graph
+        #     self.agents = AgentZoo.load_agents(project_dir)
 
     async def profile_tools_stats(self):
         while True:
             await asyncio.sleep(60 * 1)
             agents = self.agents
     
-            for projectId, config in agents.items():
+            for project_id, config in agents.items():
                 counter = config.get('counter')
-                logger.info(f"[MINER] Project {projectId} - Tool usage stats: {counter.stats()}")
+                logger.info(f"[MINER] Project {project_id} - Tool usage stats: {counter.stats()}")
     
 if __name__ == "__main__":
     miner = Miner()

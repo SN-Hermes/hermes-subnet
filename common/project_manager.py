@@ -118,6 +118,24 @@ class ProjectManager:
                 continue
             await self.register_project(cid, project.metadata.endpoint)
         return parsed
+    
+    def load(self):
+        projects = {}
+        for project_dir in self.target_dir.iterdir():
+            if not project_dir.is_dir():
+                continue
+            cid = project_dir.name
+            if cid == "__pycache__":
+                continue
+            config_file = project_dir / "config.json"
+            if not config_file.exists():
+                continue
+            with open(config_file) as f:
+                config = json.load(f)
+            projects[cid] = ProjectConfig(**config)
+
+        self.projects_config.update({cid: config for cid, config in projects.items()})
+        return self.projects_config
 
     def get_project(self, cid: str) -> ProjectConfig:
         return self.projects_config.get(cid)

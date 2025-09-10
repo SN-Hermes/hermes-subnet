@@ -57,12 +57,13 @@ class SyntheticStreamSynapse(bt.StreamingSynapse):
 class SyntheticNonStreamSynapse(bt.Synapse):
     id: str | None = None
     elapsed_time: float | None = 0.0
-    projectId: str | None = None
+    project_id: str | None = None
     question: str | None = None
     response: str | None = ''
 
 class OrganicStreamSynapse(bt.StreamingSynapse):
     time_elapsed: int = 0
+    project_id: str | None = None
     completion: ChatCompletionRequest | None = None
     response: Optional[dict] = None
 
@@ -89,6 +90,6 @@ class OrganicStreamSynapse(bt.StreamingSynapse):
     
 class OrganicNonStreamSynapse(bt.Synapse):
     id: str | None = None
-    projectId: str | None = None
+    project_id: str | None = None
     completion: ChatCompletionRequest | None = None
     response: Optional[dict] = None

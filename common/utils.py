@@ -1,3 +1,4 @@
+import json
 import os
 import logging
 import sys
@@ -27,7 +28,11 @@ class InterceptHandler(logging.Handler):
         logger.opt(depth=depth, exception=record.exc_info, raw=True).log(level, record.getMessage() + "\n")
 
 
-def configure_loguru():
+def configure_loguru(
+        file: str = None,
+        level: str = "INFO",
+        json: bool = False
+):
     """
     Configure loguru to intercept standard logging and suppress noisy third-party libraries.
     """
@@ -35,9 +40,19 @@ def configure_loguru():
     logger.remove()
     logger.add(
         sys.stderr,
-        level="INFO",
+        level=level,
         format="<green>{time:YYYY-MM-DD HH:mm:ss.SSS}</green> | <level>{level}</level> | <level>{message}</level>"
     )
+
+    if file:
+        logger.add(
+            file, 
+            level="INFO", 
+            rotation="00:00", # New file at 0:00 every day
+            retention="15 days",
+            serialize=json, # If set, format will be ignored
+            format="{time:YYYY-MM-DD HH:mm:ss.SSS} | {level} | {extra} | {message}",
+        )
     
     # Intercept standard library logging
     logging.basicConfig(handlers=[InterceptHandler()], level=0, force=True)

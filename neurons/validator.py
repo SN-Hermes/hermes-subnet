@@ -103,7 +103,7 @@ class Validator(BaseNeuron):
         ]
         await asyncio.gather(*tasks)
 
-    async def init_project(self):
+    async def init_project(self, pull=True):
         model_name = os.getenv("LLM_MODEL", "gpt-5")
         self.llm = ChatOpenAI(
             model=model_name,
@@ -121,7 +121,11 @@ class Validator(BaseNeuron):
         current_dir = Path(__file__).parent
         project_dir = current_dir.parent / "projects" / self.role
         self.project_manager = ProjectManager(project_dir)
-        await self.project_manager.pull()
+
+        if pull:
+            await self.project_manager.pull()
+        else:
+            self.project_manager.load()
 
         self.init_agents()
 
@@ -234,7 +238,6 @@ class Validator(BaseNeuron):
 
                 project_score.append(zip_scores)
 
-
                 project_score = np.array(project_score)
                 logger.info(f"project_score: {project_score}")
 
@@ -292,7 +295,7 @@ class Validator(BaseNeuron):
     async def query_miner(self, uid: int, cid: str, task_id: str, question: str, ground_truth: str):
         try:
             start_time = time.perf_counter()
-            synapse = SyntheticNonStreamSynapse(id=task_id, projectId=cid, question=question)
+            synapse = SyntheticNonStreamSynapse(id=task_id, project_id=cid, question=question)
             r = await self.dendrite.forward(
                 axons=self.settings.metagraph.axons[uid],
                 synapse=synapse,
