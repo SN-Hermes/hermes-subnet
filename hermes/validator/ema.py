@@ -1,3 +1,4 @@
+from typing import List
 from loguru import logger
 
 
@@ -7,8 +8,8 @@ class EMAUpdater:
 
          # {uid: score}
         self.last_scores = {}
-    
-    def update(self, cur_uids, cur_scores):
+
+    def update(self, cur_uids: List[int], cur_scores: List[float]):
         cur_dict = dict(zip(cur_uids, cur_scores))
         new_scores = {}
 

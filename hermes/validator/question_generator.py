@@ -5,6 +5,7 @@ from collections import deque
 import difflib
 
 from langchain_openai import ChatOpenAI
+from loguru import logger
 
 from agent.subquery_graphql_agent.base import GraphQLAgent
 from common.prompt_template import SYNTHETIC_PROMPT, SYNTHETIC_PROMPT_SUBQL
@@ -31,7 +32,7 @@ class QuestionGenerator:
         formatted += "\nGenerate a COMPLETELY DIFFERENT question with different metrics, addresses, or eras."
         return formatted
 
-    def generate_question(self, project_cid: str, entity_schema: str, llm: ChatOpenAI | None) -> str:
+    def generate_question(self, project_cid: str, entity_schema: str, llm: ChatOpenAI) -> str:
         if not entity_schema:
             return ""
         if project_cid not in self.project_question_history:
@@ -46,10 +47,12 @@ class QuestionGenerator:
         else:
             prompt = SYNTHETIC_PROMPT.format(entity_schema=entity_schema, recent_questions=recent_questions)
         
-        # logger.debug(f"Generated prompt for project {project_cid}:\n{prompt}")
-        
-        response = llm.invoke([HumanMessage(content=prompt)])
-        question = response.content.strip()
+        try:
+            response = llm.invoke([HumanMessage(content=prompt)])
+            question = response.content.strip()
+        except Exception as e:
+            logger.error(f"Error generating question for project {project_cid}: {e}")
+            return ""
         
         self.add_to_history(project_cid, question)
         return question

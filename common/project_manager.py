@@ -1,4 +1,3 @@
-import asyncio
 from dataclasses import asdict, dataclass
 import json
 import os
@@ -7,10 +6,10 @@ from typing import Any, Dict, List, Optional
 
 import aiohttp
 import httpx
+from langchain_openai import ChatOpenAI
 from loguru import logger
 from pydantic import BaseModel
 import yaml
-
 from common.utils import fetch_from_ipfs
 
 
@@ -86,8 +85,10 @@ class ProjectManager:
     projects: Dict[str, Project] = {}
     projects_config: Dict[str, ProjectConfig] = {}
     target_dir: Path | None = None
+    llm: ChatOpenAI
 
-    def __init__(self, target_dir: Path | None = None):
+    def __init__(self, llm: ChatOpenAI, target_dir: Path | None = None):
+        self.llm = llm
         if target_dir is not None:
             self.target_dir = Path(target_dir)
 
@@ -104,7 +105,7 @@ class ProjectManager:
         }
         board_url = os.environ.get('BOARD_SERVICE')
         if not board_url:
-            logger.error("BOARD_SERVICE environment variable is not set.")
+            logger.error("[ProjectManager] BOARD_SERVICE environment variable is not set.")
             exit(1)
         async with aiohttp.ClientSession() as session:
             async with session.post(f"{board_url}/project/list", headers=headers, json=data) as resp:
@@ -114,7 +115,7 @@ class ProjectManager:
 
         for cid, project in self.projects.items():
             if ALLOWED_CID and cid not in ALLOWED_CID:
-                logger.warning(f"Project {cid} is not in the allowed list.")
+                logger.warning(f"[ProjectManager] Project {cid} is not in the allowed list.")
                 continue
             await self.register_project(cid, project.metadata.endpoint)
         return parsed
@@ -145,7 +146,7 @@ class ProjectManager:
 
     async def pull_manifest(self, cid: str) -> Dict:
         try:
-            logger.info(f"Fetching manifest for CID: {cid}")
+            logger.info(f"[ProjectManager] Fetching manifest for CID: {cid}")
             manifest_content = await fetch_from_ipfs(cid)
             try:
                 manifest = yaml.safe_load(manifest_content)
@@ -153,9 +154,9 @@ class ProjectManager:
                 manifest = json.loads(manifest_content)
             return manifest
         except Exception as e:
-            raise RuntimeError(f"Failed to pull manifest {cid}: {str(e)}")
+            raise RuntimeError(f"[ProjectManager] Failed to pull manifest {cid}: {str(e)}")
 
-    async def pull_schema(self, manifest: Dict) -> str:
+    async def pull_schema(self, cid: str, manifest: Dict) -> str:
         try:
             # Handle different schema path formats
             schema_info = manifest.get('schema', {})
@@ -166,44 +167,44 @@ class ProjectManager:
                     if schema_path.startswith('/ipfs/'):
                         # Extract CID from The Graph format: /ipfs/QmXXX
                         schema_cid = schema_path.replace('/ipfs/', '')
-                        logger.debug(f"Fetching The Graph schema from IPFS CID: {schema_cid}")
+                        logger.debug(f"[ProjectManager] Fetching The Graph schema from IPFS CID: {schema_cid}")
                         schema_content = await fetch_from_ipfs(schema_cid)
                     else:
-                        logger.debug(f"Fetching schema file: {schema_path}")
+                        logger.debug(f"[ProjectManager] Fetching schema file: {schema_path}")
                         schema_content = await fetch_from_ipfs(cid, schema_path)
                 else:
                     # SubQL format: schema: { file: "schema.graphql" }
                     schema_path = schema_info.get('file', 'schema.graphql')
                     if schema_path.startswith('http'):
-                        logger.debug(f"Fetching schema from external URL: {schema_path}")
+                        logger.debug(f"[ProjectManager] Fetching schema from external URL: {schema_path}")
                         async with httpx.AsyncClient(timeout=30.0) as client:
                             schema_response = await client.get(schema_path)
                             schema_response.raise_for_status()
                             schema_content = schema_response.text
                     elif schema_path.startswith('ipfs://'):
                         schema_cid = schema_path.replace('ipfs://', '')
-                        logger.debug(f"Fetching SubQL schema from IPFS CID: {schema_cid}")
+                        logger.debug(f"[ProjectManager] Fetching SubQL schema from IPFS CID: {schema_cid}")
                         schema_content = await fetch_from_ipfs(schema_cid)
                     else:
-                        logger.debug(f"Fetching schema file: {schema_path}")
+                        logger.debug(f"[ProjectManager] Fetching schema file: {schema_path}")
                         schema_content = await fetch_from_ipfs(cid, schema_path)
             else:
                 # Fallback for simple string format
                 schema_path = str(schema_info) if schema_info else 'schema.graphql'
-                logger.debug(f"Fetching schema file: {schema_path}")
+                logger.debug(f"[ProjectManager] Fetching schema file: {schema_path}")
                 schema_content = await fetch_from_ipfs(cid, schema_path)
 
             return schema_content
         except Exception as e:
-            raise RuntimeError(f"Failed to pull schema: {str(e)}")
+            raise RuntimeError(f"[ProjectManager] Failed to pull schema: {str(e)}")
 
 
     async def register_project(self, cid: str, endpoint: str) -> ProjectConfig:
         try:
             manifest = await self.pull_manifest(cid)
-            schema_content = await self.pull_schema(manifest)
+            schema_content = await self.pull_schema(cid, manifest)
 
-            llm_analysis = await self.analyze_project_with_llm(manifest, schema_content)
+            llm_analysis = await self.analyze_project_with_llm(manifest, schema_content, llm=self.llm)
 
             config = ProjectConfig(
                 cid=cid,
@@ -219,11 +220,11 @@ class ProjectManager:
             self._save_project(config)
 
             self.projects_config[cid] = config
-            logger.info(f"Registered project: {llm_analysis['domain_name']} ({cid})")
+            logger.info(f"[ProjectManager] Registered project: {llm_analysis['domain_name']} ({cid})")
             return config
         except Exception as e:
-            raise RuntimeError(f"Failed to register project {cid}: {str(e)}")
-    
+            raise RuntimeError(f"[ProjectManager] Failed to register project {cid}: {str(e)}")
+
 
     async def analyze_project_with_llm(self, manifest: dict, schema_content: str, llm=None) -> dict:
         """
@@ -311,14 +312,14 @@ Respond ONLY with valid JSON in this exact format (no markdown code blocks):
 
 Make each capability very specific to the entities found in the schema."""
 
-            logger.info("Analyzing project with LLM...")
-            logger.info(f"Project info - Name: {project_name}, Description: {project_description[:100]}...")
-            logger.debug(f"Network: {network_info}")
-            logger.debug(f"Data sources: {datasources_info}")
-            logger.debug(f"Schema length: {len(schema_content)} chars (preview: {len(schema_preview)} chars)")
-            logger.debug(f"Sending prompt to LLM (length: {len(analysis_prompt)} chars)")
+            logger.info(f"[ProjectManager] Project info - Name: {project_name}, Description: {project_description[:100]}...")
+            logger.info("[ProjectManager] Analyzing project with LLM...")
+            logger.debug(f"[ProjectManager] Network: {network_info}")
+            logger.debug(f"[ProjectManager] Data sources: {datasources_info}")
+            logger.debug(f"[ProjectManager] Schema length: {len(schema_content)} chars (preview: {len(schema_preview)} chars)")
+            logger.debug(f"[ProjectManager] Sending prompt to LLM (length: {len(analysis_prompt)} chars)")
             response = llm.invoke([HumanMessage(content=analysis_prompt)])
-            logger.debug(f"LLM Raw Response: {response.content}")
+            logger.debug(f"[ProjectManager] LLM Raw Response: {response.content}")
         
             # Parse JSON response - handle markdown code blocks
             try:
@@ -345,18 +346,18 @@ Make each capability very specific to the entities found in the schema."""
                         "How can I filter the data?"
                     ]
             
-                logger.info(f"LLM analysis completed: {result['domain_name']}")
-                logger.info(f"Generated capabilities: {len(result['domain_capabilities'])} items")
-                logger.info(f"Generated questions: {len(result['suggested_questions'])} items")
+                logger.info(f"[ProjectManager] LLM analysis completed: {result['domain_name']}")
+                logger.info(f"[ProjectManager] Generated capabilities: {len(result['domain_capabilities'])} items")
+                logger.info(f"[ProjectManager] Generated questions: {len(result['suggested_questions'])} items")
                 return result
             except json.JSONDecodeError as e:
-                logger.error(f"LLM response was not valid JSON: {e}")
-                logger.debug(f"Full raw response: {response.content}")
-                logger.debug(f"Cleaned content: {content}")
+                logger.error(f"[ProjectManager] LLM response was not valid JSON: {e}")
+                logger.debug(f"[ProjectManager] Full raw response: {response.content}")
+                logger.debug(f"[ProjectManager] Cleaned content: {content}")
                 raise ValueError("Invalid JSON response from LLM")
             
         except Exception as e:
-            logger.warning(f"LLM analysis failed: {e}, using enhanced fallback")
+            logger.warning(f"[ProjectManager] LLM analysis failed: {e}, using enhanced fallback")
         
             # Enhanced fallback analysis
             project_name = manifest.get('name', 'SubQuery Project')

@@ -30,5 +30,5 @@ class Timer:
         if self.response:
             # Create answer table
             output_lines.append(table_formatter.create_single_column_table("💬 Answer", self.response))
-        self.log.info("\n".join(output_lines))
-        self.log.info(f"""⏱️ cost: {self.final_time:.4f}s""")
+        self.log and self.log.info("\n".join(output_lines))
+        self.log and self.log.info(f"""⏱️ cost: {self.final_time:.4f}s""")

@@ -98,9 +98,7 @@ class Settings:
                 continue
             uids.append(int(uid))
         return uids
-    
 
     def inspect(self):
         uids = self.metagraph.uids
         logger.info(f"Inspecting METAGRAPH UIDs: {uids}")
-
