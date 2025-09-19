@@ -75,10 +75,15 @@ class ChallengeManager:
             llm_synthetic=self.llm_synthetic,
         )
 
-        self.scorer_manager = ScorerManager(llm_score=self.llm_score)
+        self.scorer_manager = ScorerManager(
+            llm_score=self.llm_score,
+            score_state_path=Path(self.settings.base_dir) / ".data" / "score_state.pt"
+        )
+
         self.workload_manager = WorkloadManager(
             challenge_manager=self,
-            organic_score_queue=organic_score_queue
+            organic_score_queue=organic_score_queue,
+            work_state_path=Path(self.settings.base_dir) / ".data" / "workload_state.pt"
         )
 
         self.event_stop = event_stop
@@ -134,7 +139,7 @@ class ChallengeManager:
                 challenge_id = str(uuid4())
                 
                 # generate challenge
-                question = question_generator.generate_question(cid, project_config.schema_content, self.llm_synthetic)
+                question = await question_generator.generate_question(cid, project_config.schema_content, self.llm_synthetic)
                 if not question:
                     continue
 

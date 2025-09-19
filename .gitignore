@@ -170,3 +170,4 @@ testing/
 .DS_Store
 
 projects/
+.data/

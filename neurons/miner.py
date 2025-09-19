@@ -232,6 +232,6 @@ if __name__ == "__main__":
     asyncio.run(miner.start())
 
     while True:
-        time.sleep(10)
+        asyncio.sleep(10)
 
 

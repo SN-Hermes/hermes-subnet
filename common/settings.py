@@ -13,7 +13,7 @@ class Settings:
     _subtensor: Subtensor | None = None
     _wallet: bt.wallet | None = None
     _last_metagraph: Metagraph = None
-    _last_update_time: float = 0
+    _last_update_time: int = 0
 
     @classmethod
     def load_env_file(cls, role: str):
@@ -36,12 +36,12 @@ class Settings:
     
     @property
     def metagraph(self) -> Metagraph:
-        if time.time() - self._last_update_time > 1200:
+        if int(time.time()) - self._last_update_time > 1200:
             try:
                 logger.info(f"Fetching new METAGRAPH for NETUID={self.netuid}")
                 meta = self.subtensor.metagraph(netuid=self.netuid)
                 self._last_metagraph = meta
-                self._last_update_time = time.time()
+                self._last_update_time = int(time.time())
                 return meta
             except Exception as e:
                 logger.error(f"Failed to fetch new METAGRAPH for NETUID={self.NETUID}: {e}")
@@ -86,6 +86,10 @@ class Settings:
     @property
     def subtensor_network(self) -> str | None:
         return os.environ.get("SUBTENSOR_NETWORK", None)
+
+    @property
+    def base_dir(self) -> str:
+        return os.path.abspath(os.path.dirname(os.path.dirname(__file__)))
 
     def miners(self) -> Tuple[List[int], List[str]]:
         uids = []

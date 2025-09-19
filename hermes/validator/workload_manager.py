@@ -1,14 +1,13 @@
 import asyncio
 from collections import deque
 import os
-from typing import Any, List, Tuple
+from pathlib import Path
 import time
 from collections import defaultdict
 import threading
-
 from loguru import logger
-
 from typing import TYPE_CHECKING
+import torch
 
 from common.protocol import OrganicNonStreamSynapse
 if TYPE_CHECKING:
@@ -55,6 +54,18 @@ class BucketCounter:
         with self._lock:
             self.buckets = {k: v for k, v in self.buckets.items() if k >= min_bucket}
 
+    def serialize(self) -> dict:
+        return {
+            "uid": self.uid,
+            "hotkey": self.hotkey,
+            "buckets": dict(self.buckets)
+        }
+    
+    @staticmethod
+    def deserialize(data: dict) -> "BucketCounter":
+        obj = BucketCounter(data["uid"], data["hotkey"])
+        obj.buckets = defaultdict(int, data["buckets"])
+        return obj
 
 class WorkloadManager:
     uid_organic_workload_counter: dict[int, BucketCounter]
@@ -66,9 +77,16 @@ class WorkloadManager:
     organic_task_concurrency: int
     organic_task_sample_rate: int
     organic_workload_counter_full_purge_interval: int
-    last_full_purge_time: float = time.time()
+    last_full_purge_time: int = int(time.time())
+    work_state_path: str | Path = None
+    collect_count: int
 
-    def __init__(self, challenge_manager: "ChallengeManager", organic_score_queue: list):
+    def __init__(
+        self, 
+        challenge_manager: "ChallengeManager", 
+        organic_score_queue: list,
+        work_state_path: str | Path = None
+    ):
         self.challenge_manager = challenge_manager
         self.organic_score_queue = organic_score_queue
 
@@ -82,13 +100,22 @@ class WorkloadManager:
         self.organic_task_concurrency = int(os.getenv("WORKLOAD_ORGANIC_TASK_CONCURRENCY", 5))
         self.organic_task_sample_rate = int(os.getenv("WORKLOAD_ORGANIC_TASK_SAMPLE_RATE", 5))
         self.organic_workload_counter_full_purge_interval = int(os.getenv("WORKLOAD_ORGANIC_WORKLOAD_COUNTER_FULL_PURGE_INTERVAL", 3600))
+        self.work_state_path = work_state_path
+        self.collect_count = 0
+        self.load_state()
 
-    async def collect(self, uid: int, hotkey: str, response: OrganicNonStreamSynapse = None):
+    async def collect(self, uid: int, hotkey: str):
          async with self._purge_lock:
             if uid not in self.uid_organic_workload_counter:
                 self.uid_organic_workload_counter[uid] = BucketCounter(uid, hotkey)
 
             cur = self.uid_organic_workload_counter[uid].tick(hotkey)
+
+            self.collect_count += 1
+            if self.collect_count % 10 == 0:
+                self.save_state()
+                self.collect_count = 0
+
             return cur
 
     async def purge(self, uids: list[int]):
@@ -96,7 +123,7 @@ class WorkloadManager:
             if uid in self.uid_organic_workload_counter:
                 self.uid_organic_workload_counter[uid].cleanup()
 
-        now = time.time()
+        now = int(time.time())
         if now - self.last_full_purge_time > self.organic_workload_counter_full_purge_interval:
             async with self._purge_lock:
                 to_delete = []
@@ -113,7 +140,7 @@ class WorkloadManager:
         uids: list[int],
         hotkeys: list[str],
         challenge_id: str = ""
-    ) -> List[float]:
+    ) -> list[float]:
         await self.purge(uids)
 
         workload_counts = []
@@ -167,7 +194,7 @@ class WorkloadManager:
                 info_lines = []
                 for uid, counter in self.uid_organic_workload_counter.items():
                     info_lines.append(f"UID: {uid}, hotkey: {counter.hotkey}, buckets: {dict(counter.buckets)}")
-                if not info_lines:
+                if len(info_lines) > 0:
                     logger.info("\n".join(info_lines))
 
             try:
@@ -209,3 +236,46 @@ class WorkloadManager:
 
             except Exception as e:
                 logger.error(f"[WorkloadManager] Error computing organic workload scores: {e}")
+
+    def load_state(self):
+        try:
+            if not self.work_state_path or not os.path.exists(self.work_state_path):
+                return
+
+            state: dict = torch.load(str(self.work_state_path))
+            timestamp = state.get("timestamp", 0)
+            # only load state within 3 days
+            if abs(int(time.time()) - timestamp) > 3 * 24 * 3600:
+                    return
+            
+            if "works" in state:
+                self.uid_organic_workload_counter = {
+                    uid: BucketCounter.deserialize(counter_data) 
+                    for uid, counter_data in state["works"].items()
+                }
+                workload_info = []
+                for uid, counter in self.uid_organic_workload_counter.items():
+                    workload_info.append(f"UID: {uid}, hotkey: {counter.hotkey}, total_workload: {counter.count(counter.hotkey)}, buckets: {dict(counter.buckets)}")
+                logger.info(f"[WorkloadManager] Load state from {self.work_state_path}, works: {list(state['works'].keys())}\n" + "\n".join(workload_info))
+
+        except Exception as e:
+            logger.error(f"[WorkloadManager] Load state error: {e}")
+    
+    def save_state(self):
+        try:
+            if not self.work_state_path:
+                return
+
+            dir_path = os.path.dirname(self.work_state_path)
+            if not os.path.exists(dir_path):
+                os.makedirs(dir_path, exist_ok=True)
+
+            state = {
+                "timestamp": int(time.time()),
+                "works": {uid: counter.serialize() for uid, counter in self.uid_organic_workload_counter.items()}
+            }
+            torch.save(state, str(self.work_state_path))
+            logger.info(f"[WorkloadManager] Save state to {self.work_state_path}, works: {list(state['works'].keys())}")
+
+        except Exception as e:
+            logger.error(f"[WorkloadManager] Save state error: {e}")

@@ -1,4 +1,3 @@
-from typing import List
 from loguru import logger
 
 class EMAUpdater:
@@ -8,7 +7,7 @@ class EMAUpdater:
         # {uid: (score, hotkey) }
         self._last_scores = {}
 
-    def update(self, cur_uids: List[int], cur_hotkeys: List[str], cur_scores: List[float]):
+    def update(self, cur_uids: list[int], cur_hotkeys: list[str], cur_scores: list[float]):
         cur_dict_score = dict(zip(cur_uids, cur_scores))
         cur_dict_hotkeys = dict(zip(cur_uids, cur_hotkeys))
         new_scores = {}
@@ -42,6 +41,11 @@ class EMAUpdater:
         # logger.info(f"EMA updated scores: {self._last_scores}")
         return new_scores
 
+    def load(self, state: dict[str, tuple[float, str]]):
+        if not state:
+            return
+        self._last_scores = state
+        return self._last_scores
 
     @property
     def last_scores(self):

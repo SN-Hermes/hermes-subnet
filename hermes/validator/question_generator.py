@@ -32,7 +32,7 @@ class QuestionGenerator:
         formatted += "\nGenerate a COMPLETELY DIFFERENT question with different metrics, addresses, or eras."
         return formatted
 
-    def generate_question(self, project_cid: str, entity_schema: str, llm: ChatOpenAI) -> str:
+    async def generate_question(self, project_cid: str, entity_schema: str, llm: ChatOpenAI) -> str:
         if not entity_schema:
             return ""
         if project_cid not in self.project_question_history:
@@ -48,7 +48,7 @@ class QuestionGenerator:
             prompt = SYNTHETIC_PROMPT.format(entity_schema=entity_schema, recent_questions=recent_questions)
         
         try:
-            response = llm.invoke([HumanMessage(content=prompt)])
+            response = await llm.ainvoke([HumanMessage(content=prompt)])
             question = response.content.strip()
         except Exception as e:
             logger.error(f"Error generating question for project {project_cid}: {e}")

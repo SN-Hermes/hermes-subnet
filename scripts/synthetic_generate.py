@@ -37,7 +37,7 @@ if __name__ == "__main__":
     logger.info(f"entity_schema: ({len(entity_schema)} chars)")
 
     for i in range(10):
-        question = question_generator.generate_question(SUBQL_CID, entity_schema, llm)
+        question = asyncio.run(question_generator.generate_question(SUBQL_CID, entity_schema, llm))
         logger.info(f"Generated question {i+1}/{count}: {question}")
 
         # response = asyncio.run(server_agent.query_no_stream(question))
