@@ -47,12 +47,15 @@ class ScorerManager:
     async def cal_ground_truth_score(self, ground_truth: str, miner_synapse: SyntheticNonStreamSynapse):
         if not miner_synapse.response:
             return 0.0
-
         question_prompt = SCORE_PROMPT.format(
             ground_truth=ground_truth, 
             miner_answer=miner_synapse.response
         )
-        summary_response = self.llm_score.invoke([HumanMessage(content=question_prompt)])
+        try :
+            summary_response = await self.llm_score.ainvoke([HumanMessage(content=question_prompt)])
+        except Exception as e:
+            logger.error(f"[ScorerManager] - LLM scoring error: {e}")
+            return 0.0
         return summary_response.content
     
     def update_scores(self, 

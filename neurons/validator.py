@@ -145,7 +145,7 @@ class Validator(BaseNeuron):
 
                 # Filter out None responses
                 responses = [res for res in responses if res is not None]
-                logger.debug(f"[CheckMiner]Miner availability responses: {responses}")
+                logger.debug(f"[CheckMiner] Miner availability responses: {responses}")
 
                 for r in responses:
                     miners_dict[r["uid"]] = {

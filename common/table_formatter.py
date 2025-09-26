@@ -1,4 +1,5 @@
 from rich.console import Console
+from rich.box import ROUNDED
 from rich.table import Table
 from loguru import logger
 
@@ -15,6 +16,16 @@ class TableFormatter:
         table.add_column(header, style="white")
         table.add_row(content)
         
+        with self.console.capture() as capture:
+            self.console.print(table)
+        return capture.get().strip()
+    
+    def create_single_column_multiple_row_table(self, header: str, rows: list[str], header_style: str = "bold") -> str:
+        """Create a single column table with header and content"""
+        table = Table(show_header=True, header_style=header_style, box=ROUNDED)
+        table.add_column(header, style="white")
+        for row in rows:
+            table.add_row(row)
         with self.console.capture() as capture:
             self.console.print(table)
         return capture.get().strip()

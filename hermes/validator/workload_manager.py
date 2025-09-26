@@ -53,7 +53,7 @@ class BucketCounter:
         now = int(time.time())
         min_bucket = (now // self.bucket_seconds) - self.window_buckets
         with self._lock:
-            self.buckets = {k: v for k, v in self.buckets.items() if k >= min_bucket}
+            self.buckets = defaultdict(int, {k: v for k, v in self.buckets.items() if k >= min_bucket})
 
     def serialize(self) -> dict:
         return {

@@ -7,6 +7,7 @@ from common.table_formatter import table_formatter
 class Timer:
     def __init__(self, label="", log=None, metadata=None):
         self.response = ''
+        self.error = ''
         self.label = label
         self.elapsed = 0.0
         self.metadata = metadata or {}
@@ -29,6 +30,9 @@ class Timer:
         
         if self.response:
             # Create answer table
-            output_lines.append(table_formatter.create_single_column_table("💬 Answer", self.response))
+            rows = [self.response]
+            if self.error:
+                rows.append(f"⚠️ Error: {self.error}")
+            output_lines.append(table_formatter.create_single_column_multiple_row_table("💬 Answer", rows))
         self.log and self.log.info("\n".join(output_lines))
         self.log and self.log.info(f"""⏱️ cost: {self.final_time:.4f}s""")

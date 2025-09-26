@@ -1,9 +1,13 @@
+import json
 import os
 import signal
 import httpx
 from loguru import logger
 import netaddr
 import requests
+from langchain.schema import BaseMessage
+from langchain.schema import AIMessage
+
 
 
 def try_get_external_ip() -> str | None:
@@ -145,6 +149,28 @@ def select_uid(synthetic_score: dict, available_miners: list, uid_select_count: 
         return sorted_miners[0][0], sorted_miners[0][1]
 
     return None, None
+
+def try_get_invalid_tool_messages(messages: list[BaseMessage]) -> str | None:
+    for m in reversed(messages):
+        if isinstance(m, AIMessage):
+            if len(m.invalid_tool_calls) > 0:
+                # logger.info(f"----> found invalid tool call, {m.invalid_tool_calls}")
+                return json.dumps(m.invalid_tool_calls)
+    return None
+
+def try_get_tool_hit(messages: list[BaseMessage], exclude_tools=[]) -> list[tuple[str, int]]:
+    tool_order = []
+    tool_counts = {}
+    for m in messages:
+        if m.type == 'tool' and m.name not in exclude_tools:
+            if m.name not in tool_counts:
+                tool_order.append(m.name)
+                tool_counts[m.name] = 1
+            else:
+                tool_counts[m.name] += 1
+    tool_hit = [(name, tool_counts[name]) for name in tool_order]
+    return tool_hit
+
 
 def kill_process_group():
     try:

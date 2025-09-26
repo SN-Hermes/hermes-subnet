@@ -17,19 +17,27 @@
 # DEALINGS IN THE SOFTWARE.
 
 import asyncio
+import json
 import os
 from pathlib import Path
 import time
 import bittensor as bt
 from langchain_openai import ChatOpenAI
 from loguru import logger
+from loguru._logger import Logger
 from bittensor.core.stream import StreamingSynapse
+from agent.stats import Metrics
+from common.table_formatter import table_formatter
 from common.agent_manager import AgentManager
+from common.errors import ErrorCode
 from common.logger import HermesLogger
-from common.protocol import CapacitySynapse, OrganicNonStreamSynapse, OrganicStreamSynapse, SyntheticNonStreamSynapse
-from common.timer import Timer
+from common.protocol import CapacitySynapse, OrganicNonStreamSynapse, OrganicStreamSynapse, StatsMiddleware, SyntheticNonStreamSynapse
+from common.sqlite_manager import SQLiteManager
+import common.utils as utils
 from hermes.base import BaseNeuron
 import agent.graphql_agent as subAgent
+
+
 
 class Miner(BaseNeuron):
 
@@ -45,6 +53,10 @@ class Miner(BaseNeuron):
     async def start(self):
         super().start()
 
+        self.metrics = Metrics()
+        
+        self.db_queue = asyncio.Queue()
+        self.sqlite_manager = SQLiteManager(f".data/{self.role}.db")
         self.axon = bt.axon(
             wallet=self.settings.wallet, 
             port=self.settings.port,
@@ -52,10 +64,15 @@ class Miner(BaseNeuron):
             external_ip=self.settings.external_ip,
             external_port=self.settings.port
         )
+        self.axon.app.add_middleware(
+            StatsMiddleware,
+            sqlite_manager=self.sqlite_manager,
+            metrics=self.metrics
+        )
 
         def allow_all(synapse: CapacitySynapse) -> None:
             return None
-
+        
         self.axon.attach(
             forward_fn=self.forward_organic_stream,
         )
@@ -80,6 +97,7 @@ class Miner(BaseNeuron):
         logger.info(f"Axon serving on port: {self.settings.port}")
         logger.info(f"Axon created: {self.axon}")
         logger.info(f"Miner starting at block: {self.settings.subtensor.block}")
+        logger.info(f"Stats at: http://{self.settings.external_ip}:{self.settings.port}/stats")
 
         tasks = [
             asyncio.create_task(
@@ -87,37 +105,139 @@ class Miner(BaseNeuron):
             ),
             asyncio.create_task(
                 self.profile_tools_stats()
+            ),
+            asyncio.create_task(
+                self.db_writer()
             )
         ]
+
         await asyncio.gather(*tasks)
 
+    async def db_writer(self):
+        last_check_time = 0
+
+        while True:
+            if int(time.time()) - last_check_time > 60 * 10:
+                self.sqlite_manager.cleanup_old_records()
+                last_check_time = int(time.time())
+
+            item = await self.db_queue.get()
+
+            type = item.get("type")
+            status_code = item.get("status_code")
+            project_id = item.get("project_id")
+
+            target = self.metrics.synthetic_project_usage if type == 0 else self.metrics.organic_project_usage
+            target.incr(
+                project_id, 
+                success=False if status_code != 200 else True
+            )
+
+            tool_hit = item.get("tool_hit")
+
+            logger.info(f"[DB Writer] - Inserting request log for project {project_id} with status code {status_code}, type:{type}, tool_hit: {tool_hit}")
+
+            if tool_hit and tool_hit != '[]':
+                tool_hit_list = json.loads(tool_hit)
+                target = self.metrics.synthetic_tool_usage if type == 0 else self.metrics.organic_tool_usage
+                for tool_name, count in tool_hit_list:
+                    target.incr(tool_name, count)
+
+            self.sqlite_manager.insert_request(**item)
+            self.db_queue.task_done()
+
+    async def _handle_task(
+            self,
+            task: SyntheticNonStreamSynapse | OrganicNonStreamSynapse,
+            log: Logger,
+    ) -> SyntheticNonStreamSynapse | OrganicNonStreamSynapse:
+        tag = "Synthetic"
+        type = 0
+        question = task.get_question()
+
+        if isinstance(task, OrganicNonStreamSynapse):
+            tag = "Organic"
+            type = 1
+
+        project_id = task.project_id
+        agent_graph, _, graphql_agent = self.agent_manager.get_miner_agent(project_id)
+
+        tool_hit = []
+        answer = None
+        response = None
+        error = None
+        status_code = ErrorCode.SUCCESS
+
+        exclude_tools = [t.name for t in graphql_agent.tools]
+        before = time.perf_counter()
+
+        try:
+            if not agent_graph:
+                log.warning(f"[{tag}] - {task.id} No agent found for project {project_id}")
+                error = f"No agent found for project {project_id}"
+                status_code = ErrorCode.AGENT_NOT_FOUND
+            else:
+                r = await agent_graph.ainvoke(
+                    {"messages": [{"role": "user", "content": question}]},
+                    # config={"callbacks": [counter]}
+                )
+
+                # check tool stats
+                tool_hit = utils.try_get_tool_hit(
+                    r.get('messages', []),
+                    # exclude_tools=exclude_tools
+                )
+
+                answer = r.get('messages')[-1].content or None
+                if not answer:
+                    error = utils.try_get_invalid_tool_messages(r.get('messages', []))
+                    status_code = ErrorCode.TOOL_ERROR if error is not None else status_code
+
+                if status_code == ErrorCode.SUCCESS:
+                    response = r if type == 1 else answer
+
+        except Exception as e:
+            # log.error(f"[Synthetic] - {task.id} Agent error: {e}")
+            error = str(e)
+            status_code = ErrorCode.INTERNAL_SERVER_ERROR
+
+        elapsed = time.perf_counter() - before
+        
+        tool_hit_names = [t[0] for t in tool_hit]
+        rows = [f"💬 Answer: {answer}\n"]
+        if error:
+            rows.append(f"⚠️ {status_code.value} | {error}\n")
+        if len(tool_hit_names) > 0:
+            rows.append(f"🛠️ Tools Hit: {', '.join(tool_hit_names)}\n")
+        rows.append(f"⏱️ Cost: {elapsed:.4f}s")
+        
+        status_icon = "✅" if status_code == ErrorCode.SUCCESS else "❌"
+        output = table_formatter.create_single_column_multiple_row_table(
+            f"🤖 {status_icon} {tag}: {question} ({task.id})",
+            rows,
+        )
+        log.info(f"\n{output}")
+
+        task.response = response
+        task.error = error
+        task.status_code = status_code
+        self.db_queue.put_nowait({
+            "type": type,
+            "source": task.dendrite.hotkey,
+            "task_id": task.id,
+            "project_id": task.project_id,
+            "cid": task.project_id,
+            "request_data": question,
+            "response_data": answer if status_code == ErrorCode.SUCCESS else task.error,
+            "status_code": task.status_code,
+            "tool_hit": json.dumps(tool_hit),
+            "cost": elapsed,
+        })
+        return task
 
     async def forward_synthetic_non_stream(self, task: SyntheticNonStreamSynapse) -> SyntheticNonStreamSynapse:
         log = logger.bind(source=task.dendrite.hotkey)
-        project_id = task.project_id
-
-        log.info(f"🤖 [Synthetic] - {task.id} Received {project_id} task: {task.question}")
-
-        agent_config = self.agent_manager.get_miner_agent(project_id) or {}
-        agent_graph = agent_config.get('agent_graph')
-        counter = agent_config.get('counter')
-
-        if not agent_graph:
-            log.warning(f"[Synthetic] - {task.id} No agent found for project {project_id}")
-            task.response = {"error": "No agent found"}
-            return task
-
-        with Timer(label=f"[Synthetic] - {task.id} Generating answer", log=log) as t:
-            r = await agent_graph.ainvoke(
-                {"messages": [{"role": "user", "content": task.question}]},
-                config={"callbacks": [counter]}
-            )
-            # logger.info(f"Multi-agent response: {r}")
-            response = r.get('messages')[-1].content
-            t.response = response
-
-        task.response = response
-        # logger.info(f"Generated response: {synapse.response}")
+        await self._handle_task(task, log)
         return task
 
     async def forward_organic_stream(self, synapse: OrganicStreamSynapse) -> StreamingSynapse.BTStreamingResponse:
@@ -146,32 +266,11 @@ class Miner(BaseNeuron):
 
     async def forward_organic_non_stream(self, task: OrganicNonStreamSynapse) -> OrganicNonStreamSynapse:
         log = logger.bind(source=task.dendrite.hotkey)
-        project_id = task.project_id
-        user_messages = [msg for msg in task.completion.messages if msg.role == "user"]
-        user_input = user_messages[-1].content
-
-        log.info(f"🤖 [Organic] - {task.id} Received {project_id} task: {user_input}")
-
-        agent_config = self.agent_manager.get_miner_agent(project_id) or {}
-        agent = agent_config.get('agent_graph')
-        counter = agent_config.get('counter')
-
-        if not agent:
-            log.warning(f"[Organic] - {task.id} No agent found for project {project_id}")
-            task.response = {"error": "No agent found"}
-            return task
-
-        with Timer(label=f"[Organic] - {task.id} Generating answer", log=log):
-            response = agent.invoke(
-                {"messages": [{"role": "user", "content": user_input}]},
-                config={"callbacks": [counter]}
-            )
-        task.response = response
-        log.info(f"[Organic] - {task.id} Generated response: {task.model_dump_json()}")
+        await self._handle_task(task, log)
         return task
-
+        
     async def forward_capacity(self, synapse: CapacitySynapse) -> CapacitySynapse:
-        logger.info(f"\n🤖 [Miner] Received capacity request")
+        logger.info(f"[Miner] Received capacity request")
         if not self.agent_manager:
             logger.warning(f"[Miner] No agent manager found")
             synapse.response = {
@@ -191,17 +290,15 @@ class Miner(BaseNeuron):
         }
         return synapse
 
-    async def invoke_graphql_agent(self, synapse: OrganicStreamSynapse) -> str:
-        agent_config = self.agent_manager.get_miner_agent(synapse.project_id) or {}
-        graphql_agent = agent_config.get('graphql_agent')
+    async def invoke_graphql_agent(self, synapse: SyntheticNonStreamSynapse) -> str:
+        _, _, graphql_agent = self.agent_manager.get_miner_agent(synapse.project_id)
         response = await graphql_agent.query_no_stream(synapse.question)
         answer = response.get('messages')[-1].content
         return answer
 
-    async def invoke_miner_agent(self, synapse: OrganicStreamSynapse) -> str:
-        agent_config = self.agent_manager.get_miner_agent(synapse.project_id) or {}
-        miner_agent = agent_config.get('agent_graph')
-        response = await miner_agent.ainvoke(
+    async def invoke_miner_agent(self, synapse: SyntheticNonStreamSynapse) -> str:
+        agent_graph, _, _ = self.agent_manager.get_miner_agent(synapse.project_id)
+        response = await agent_graph.ainvoke(
             {"messages": [{"role": "user", "content": synapse.question}]}
         )
         answer = response.get('messages')[-1].content
@@ -233,9 +330,7 @@ class Miner(BaseNeuron):
     async def profile_tools_stats(self):
         while True:
             await asyncio.sleep(60 * 1)
-            for project_id, config in self.agent_manager.get_miner_agent().items():
-                counter = config.get('counter')
-                logger.info(f"[MINER] Project {project_id} - Tool usage stats: {counter.stats()}")
+            logger.info(f"[MINER] usage stats: {json.dumps(self.metrics.stats())}")
 
 
 if __name__ == "__main__":
@@ -243,6 +338,6 @@ if __name__ == "__main__":
     asyncio.run(miner.start())
 
     while True:
-        asyncio.sleep(10)
+        asyncio.sleep(60 * 2)
 
 

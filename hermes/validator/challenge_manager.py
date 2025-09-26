@@ -228,7 +228,8 @@ class ChallengeManager:
                 )
             elapsed_time = t.final_time
             synapse.response = r.response
-            
+
+            logger.debug(f"🔍 [ChallengeManager] - {challenge_id} MINER RESPONSE [UID: {uid}] - ✅ is_success: {r.is_success} - {r.dendrite.status_code}")
             # Check if miner provided a response
             miner_answer = synapse.response.strip() if synapse.response and synapse.response.strip() else None
             miner_output = table_formatter.create_miner_response_tables(

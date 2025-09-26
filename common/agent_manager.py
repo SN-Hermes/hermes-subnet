@@ -1,6 +1,5 @@
 import importlib
 import json
-import os
 from pathlib import Path
 from typing import Literal
 import pkgutil
@@ -69,8 +68,8 @@ class AgentManager:
                 if m.type == 'ai' and len(m.tool_calls) > 0:
                     return END
             # TODO: trim
-            first_message = messages[0:1]
-            # return {"next": "graphql_agent", "state_update": {"messages": first_message}}
+            # first_message = messages[0:1]
+            # state['messages'] = first_message
             return "graphql_agent"
         
         base_path = Path(self.save_project_dir)
@@ -135,11 +134,11 @@ class AgentManager:
                 if not suc:
                     continue
 
-                prompt = create_system_prompt(
-                    domain_name=config.get("domain_name", ""),
-                    domain_capabilities=config.get("domain_capabilities", []),
-                    decline_message=config.get("decline_message", "")
-                ) if suc else f"You are the agent for project {cid}."
+                # prompt = create_system_prompt(
+                #     domain_name=config.get("domain_name", ""),
+                #     domain_capabilities=config.get("domain_capabilities", []),
+                #     decline_message=config.get("decline_message", "")
+                # ) if suc else f"You are the agent for project {cid}."
 
                 # reconstruct agent
                 # model = os.environ.get("MINER_LLM_MODEL", "gpt-4o-mini")
@@ -182,7 +181,12 @@ class AgentManager:
     def get_graphql_agent(self, cid) -> GraphQLAgent:
         return self.graphql_agent[cid]
     
-    def get_miner_agent(self, cid: str | None = None) -> dict:
+    def get_miner_agent(self, cid: str | None = None) -> dict | tuple[StateGraph, StateGraph, GraphQLAgent]:
         if cid:
-            return self.miner_agent.get(cid)
+            config = self.miner_agent.get(cid, {})
+            return (
+                config.get('agent_graph', None),
+                config.get('miner_agent', None),
+                config.get('graphql_agent', None)
+            )
         return self.miner_agent

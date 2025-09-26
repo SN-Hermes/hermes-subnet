@@ -94,12 +94,13 @@ class Settings:
     def miners(self) -> Tuple[List[int], List[str]]:
         uids = []
         meta = self.metagraph
+        logger.debug(f"METAGRAPH UIDs: {meta.uids}")
         for uid in meta.uids:
-            # logger.info('uid:', uid, 'is_serving:', self.metagraph.axons[uid].is_serving, 'permit:', self.metagraph.validator_permit[uid], 'stake:', self.metagraph.S[uid])
+            logger.debug(f"UID: {uid}, is_serving: {meta.axons[uid].is_serving}, permit: {meta.validator_permit[uid]}, stake: {meta.S[uid]}")
             if not meta.axons[uid].is_serving:
               continue
-            if meta.validator_permit[uid] and meta.S[uid] > 1024:
-                continue
+            # if meta.validator_permit[uid] and meta.S[uid] > 1024:
+            #     continue
             uids.append(int(uid))
         hotkeys = [meta.hotkeys[u] for u in uids]
         return uids, hotkeys

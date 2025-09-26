@@ -1,9 +1,47 @@
-
+import json
 import bittensor as bt
 from typing import Optional, List
+import fastapi
 from pydantic import BaseModel, Field
-
+from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
 from loguru import logger
+
+from agent.stats import Metrics
+from common.sqlite_manager import SQLiteManager
+
+
+class StatsMiddleware(BaseHTTPMiddleware):
+    def __init__(self, app, sqlite_manager: SQLiteManager, metrics: Metrics):
+        super().__init__(app)
+        self.sqlite_manager = sqlite_manager
+        self.metrics = metrics
+
+    def handle_stats_html(self):
+        with open(f"common/stats.html", "r", encoding="utf-8") as f:
+            html = f.read()
+        return fastapi.Response(content=html, media_type="text/html")
+
+    def handle_stats_data(self, since_id: int = 0):
+        if since_id > 0:
+            data = self.sqlite_manager.fetch_newer_than(since_id)
+        else:
+            data = self.sqlite_manager.fetch_all()
+
+        return fastapi.Response(content=json.dumps({"data": data, "usage": self.metrics.stats()}), media_type="application/json")
+
+    async def dispatch(
+        self, request: "fastapi.Request", call_next: "RequestResponseEndpoint"
+    ) -> fastapi.Response:
+        path = request.url.path
+        if path == '/favicon.ico':
+            return fastapi.Response(status_code=404)
+        elif path == '/stats':
+            return self.handle_stats_html()
+        elif path == '/stats/data':
+            return self.handle_stats_data(int(request.query_params.get("since_id", 0)))
+
+        return await call_next(request)
+
 
 # ===============  openai ================
 class ChatCompletionMessage(BaseModel):
@@ -18,11 +56,6 @@ class ChatCompletionRequest(BaseModel):
     temperature: float = Field(default=0.0, description="Sampling temperature")
     max_tokens: Optional[int] = Field(default=None, description="Maximum tokens to generate")
 
-
-class SyntheticSynapse(bt.Synapse):
-    time_elapsed: int = 0
-    question: str | None = None
-    response: Optional[dict] = None
 
 class CapacitySynapse(bt.Synapse):
     time_elapsed: int = 0
@@ -55,13 +88,20 @@ class SyntheticStreamSynapse(bt.StreamingSynapse):
     def deserialize(self):
         return '[end]'
 
-class SyntheticNonStreamSynapse(bt.Synapse):
+class BaseSynapse(bt.Synapse):
     id: str | None = None
-    elapsed_time: float | None = 0.0
     project_id: str | None = None
+    cid: str | None = None
+    status_code: int | None = 200
+    error: str | None = None
+    elapsed_time: float | None = 0.0
+
+class SyntheticNonStreamSynapse(BaseSynapse):
     question: str | None = None
     response: str | None = ''
-    error: str | None = None
+
+    def get_question(self):
+        return self.question
 
 class OrganicStreamSynapse(bt.StreamingSynapse):
     time_elapsed: int = 0
@@ -90,9 +130,13 @@ class OrganicStreamSynapse(bt.StreamingSynapse):
     def deserialize(self):
         return '[end]'
     
-class OrganicNonStreamSynapse(bt.Synapse):
-    id: str | None = None
-    elapsed_time: float | None = 0.0
-    project_id: str | None = None
+class OrganicNonStreamSynapse(BaseSynapse):
     completion: ChatCompletionRequest | None = None
     response: Optional[dict] = None
+
+    def get_question(self):
+        if not self.completion:
+            return None
+        user_messages = [msg for msg in self.completion.messages if msg.role == "user"]
+        user_input = user_messages[-1].content
+        return user_input
