@@ -60,7 +60,7 @@ class Validator(BaseNeuron):
         self.forward_miner_timeout = int(os.getenv("FORWARD_MINER_TIMEOUT", 60 * 3))  # seconds
         logger.info(f"Set forward miner timeout to {self.forward_miner_timeout} seconds")
 
-    async def run_challenge(self, organic_score_queue: list, synthetic_score: list, event_stop: Event):
+    async def run_challenge(self, organic_score_queue: list, synthetic_score: list, miners_dict: dict, event_stop: Event):
         self.challenge_manager = ChallengeManager(
             settings=self.settings,
             save_project_dir=Path(__file__).parent.parent / "projects" / self.role,
@@ -68,6 +68,7 @@ class Validator(BaseNeuron):
             dendrite=self.dendrite,
             organic_score_queue=organic_score_queue,
             synthetic_score=synthetic_score,
+            miners_dict=miners_dict,
             event_stop=event_stop,
             v=self,
         )
@@ -257,7 +258,7 @@ class Validator(BaseNeuron):
             synapse.error = str(e)
             return synapse
 
-def run_challenge(organic_score_queue: list, synthetic_score: list, event_stop: Event):
+def run_challenge(organic_score_queue: list, synthetic_score: list, miners_dict: dict, event_stop: Event):
     proc = mp.current_process()
     HermesLogger.configure_loguru(
         file=f"{LOGGER_DIR}/{proc.name}.log",
@@ -265,7 +266,7 @@ def run_challenge(organic_score_queue: list, synthetic_score: list, event_stop: 
     )
 
     logger.info(f"run_challenge process id: {os.getpid()}")
-    asyncio.run(Validator().run_challenge(organic_score_queue, synthetic_score, event_stop))
+    asyncio.run(Validator().run_challenge(organic_score_queue, synthetic_score, miners_dict, event_stop))
 
 def run_api(organic_score_queue: list, miners_dict: dict, synthetic_score: list):
     proc = mp.current_process()
@@ -299,7 +300,7 @@ async def main():
         
             challenge_process = mp.Process(
                 target=run_challenge,
-                args=(organic_score_queue, synthetic_score, event_stop),
+                args=(organic_score_queue, synthetic_score, miners_dict, event_stop),
                 name="ChallengeProcess",
                 daemon=True,
             )

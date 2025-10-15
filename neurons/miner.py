@@ -108,6 +108,7 @@ class Miner(BaseNeuron):
             logger.info(f"Miner starting at block: {self.settings.subtensor.block}")
             logger.info(f"Stats at: http://{self.settings.external_ip}:{self.settings.port}/stats")
 
+            self.agent_manager = None
             self._running_tasks = [
                 asyncio.create_task(
                     self.refresh_agents()

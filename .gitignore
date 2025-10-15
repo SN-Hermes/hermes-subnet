@@ -169,7 +169,7 @@ testing/
 
 .DS_Store
 
-# projects/
+projects/
 .data/
 
 # Analysis documentation

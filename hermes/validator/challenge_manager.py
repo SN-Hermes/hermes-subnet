@@ -36,6 +36,7 @@ class ChallengeManager:
     scorer_manager: ScorerManager
     workload_manager: WorkloadManager
     synthetic_score: list
+    miners_dict: dict
     event_stop: Event
     scores: torch.Tensor
 
@@ -47,6 +48,7 @@ class ChallengeManager:
         dendrite: bt.Dendrite,
         organic_score_queue: list,
         synthetic_score: list,
+        miners_dict: dict,
         synthetic_model_name: str | None = None,
         score_model_name: str | None = None,
         event_stop: Event = None,
@@ -92,6 +94,7 @@ class ChallengeManager:
         )
 
         self.synthetic_score = synthetic_score
+        self.miners_dict = miners_dict
         self.event_stop = event_stop
 
         self._last_set_weight_time = 0
@@ -142,7 +145,12 @@ class ChallengeManager:
                     await asyncio.sleep(self.challenge_interval)
                     continue
 
-                miner_uids, miner_hotkeys = self.settings.miners()
+                miner_uids = []
+                miner_hotkeys = []
+                for uid, miner_info in self.miners_dict.items():
+                    miner_uids.append(uid)
+                    miner_hotkeys.append(miner_info["hotkey"])
+                
                 uids = []
                 hotkeys = []
                 for idx, u in enumerate(miner_uids):
