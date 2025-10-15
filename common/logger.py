@@ -30,6 +30,7 @@ class HermesLogger:
         console_level: str = "INFO",
 
         file: str = None,
+        error_file: str = None,
         file_level: str = "INFO",
         file_json: bool = False
     ):
@@ -48,7 +49,7 @@ class HermesLogger:
                 return "<green>{time:YYYY-MM-DD HH:mm:ss.SSS}</green> | <level>{level: <8}</level> | <cyan>{name}</cyan>:<cyan>{function}</cyan>:<cyan>{line}</cyan> - {message}\n"
 
         logger.add(
-            sys.stderr,
+            sys.stdout,
             level=console_level,
             format=format_record
         )
@@ -57,6 +58,15 @@ class HermesLogger:
             logger.add(
                 file, 
                 level=file_level, 
+                rotation="00:00", # New file at 0:00 every day
+                retention="15 days",
+                serialize=file_json, # If set, format will be ignored
+                format="{time:YYYY-MM-DD HH:mm:ss.SSS} | {level} | {extra} | {message}",
+            )
+        if error_file:
+            logger.add(
+                error_file, 
+                level="ERROR", 
                 rotation="00:00", # New file at 0:00 every day
                 retention="15 days",
                 serialize=file_json, # If set, format will be ignored
