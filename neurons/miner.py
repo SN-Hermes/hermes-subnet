@@ -256,6 +256,8 @@ class Miner(BaseNeuron):
         task.response = response
         task.error = error
         task.status_code = status_code
+
+        response_data = answer if status_code == ErrorCode.SUCCESS else task.error
         self.db_queue.put_nowait({
             "type": type,
             "source": task.dendrite.hotkey,
@@ -263,7 +265,7 @@ class Miner(BaseNeuron):
             "project_id": task.cid_hash,
             "cid": task.cid_hash,
             "request_data": question,
-            "response_data": answer if status_code == ErrorCode.SUCCESS else task.error,
+            "response_data": response_data or '',
             "status_code": task.status_code,
             "tool_hit": json.dumps(tool_hit),
             "cost": elapsed,
