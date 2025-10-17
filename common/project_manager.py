@@ -214,8 +214,9 @@ class ProjectManager:
             # Check if project already exists locally
             existing_config = self._load_existing_project(cid_hash)
             if existing_config:
-                logger.info(f"[ProjectManager] Loading existing project: {existing_config.domain_name} ({cid_hash})")
-                self.projects_config[cid_hash] = existing_config
+                if cid_hash not in self.projects_config:
+                    logger.info(f"[ProjectManager] Loading existing project: {existing_config.domain_name} ({cid_hash})")
+                    self.projects_config[cid_hash] = existing_config
                 return existing_config
 
             # Project doesn't exist locally, need to analyze with LLM

@@ -40,27 +40,28 @@ class AgentManager:
         self.graphql_agent = {}
         self.miner_agent = {}
         self.llm_synthetic = llm_synthetic
-
-    async def start(self, pull=True, role: Literal["", "validator", "miner"] = ""):
         self.project_manager = ProjectManager(self.llm_synthetic, self.save_project_dir)
 
+
+    async def start(self, pull=True, role: Literal["", "validator", "miner"] = ""):
         if pull:
             await self.project_manager.pull()
         else:
             self.project_manager.load()
 
         if role == "miner":
-            self.miner_agent = {}
             self._init_miner_agents()
         elif role == "validator":
-            self.graphql_agent = {}
             self._init_agents()
-        
 
     def _init_agents(self):
+        new_agents = []
         for cid_hash, project_config in self.get_projects().items():
-            self.graphql_agent[cid_hash] =  GraphQLAgent(project_config)
-        logger.info(f"[AgentManager] Initialized graphql_agents for projects: {list(self.graphql_agent.keys())}")
+            if cid_hash not in self.graphql_agent:
+                new_agents.append(cid_hash)
+                self.graphql_agent[cid_hash] =  GraphQLAgent(project_config)
+        if new_agents:
+            logger.info(f"[AgentManager] Initialized graphql_agents for projects: {new_agents}")
 
     def _init_miner_agents(self):
         def miner_router(state):
@@ -90,6 +91,9 @@ class AgentManager:
             
             cid_hash = project_dir.name
             if cid_hash == "__pycache__":
+                continue
+
+            if cid_hash in self.miner_agent:
                 continue
 
             project = self.miner_agent.get(cid_hash)

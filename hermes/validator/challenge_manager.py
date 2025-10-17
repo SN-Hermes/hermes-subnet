@@ -57,7 +57,9 @@ class ChallengeManager:
         self.settings = settings
 
         # Configure synthetic challenge loop interval (default: 10 minutes)
-        self.challenge_interval = int(os.getenv("CHALLENGE_INTERVAL", 600))  # seconds
+        self.challenge_interval = int(os.getenv("CHALLENGE_INTERVAL", 60 * 10))  # seconds
+        self.refresh_agents_interval = int(os.getenv("REFRESH_AGENTS_INTERVAL", 60 * 5))  # seconds
+
         self.forward_miner_timeout = int(os.getenv("FORWARD_MINER_TIMEOUT", 60 * 3))  # seconds
         logger.info(f"[ChallengeManager] Synthetic challenge interval set to {self.challenge_interval} seconds")
 
@@ -116,7 +118,8 @@ class ChallengeManager:
             self.task = [
                 asyncio.create_task(self.workload_manager.compute_organic_task()),
                 asyncio.create_task(self.set_weight()),
-                asyncio.create_task(self.challenge_loop())
+                asyncio.create_task(self.challenge_loop()),
+                asyncio.create_task(self.refresh_agents()),
             ]
             await asyncio.gather(*self.task)
         except KeyboardInterrupt:
@@ -391,3 +394,10 @@ class ChallengeManager:
         )
         logger.info(f"processed_weights result: {suc, msg}")
 
+    async def refresh_agents(self):
+        try:
+            while not self.event_stop.is_set():
+                await asyncio.sleep(self.refresh_agents_interval)
+                await self.agent_manager.start(pull=True, role="validator")
+        except Exception as e:
+            logger.error(f"[ChallengeManager] refresh_agents error: {e}")

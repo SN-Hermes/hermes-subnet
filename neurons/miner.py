@@ -416,12 +416,16 @@ class Miner(BaseNeuron):
         )
 
         mode = 'load' if force_load else os.getenv("PROJECT_PULL_MODE", "pull")
-        await self.agent_manager.start(mode == "pull", role="miner")
+        # await self.agent_manager.start(mode == "pull", role="miner")
 
-        # while True:
-        #     await asyncio.sleep(30 * 1)
-        #     # TODO: reconstruct multi_agent_graph
-        #     self.agents = AgentZoo.load_agents(project_dir)
+        refresh_agents_interval = int(os.getenv("REFRESH_AGENTS_INTERVAL", 60 * 5))  # seconds
+
+        while True:
+            try:
+                await self.agent_manager.start(mode == "pull", role="miner")
+                await asyncio.sleep(refresh_agents_interval)
+            except Exception as e:
+                logger.error(f"refresh_agents error: {e}")
 
     async def profile_tools_stats(self):
         try:
