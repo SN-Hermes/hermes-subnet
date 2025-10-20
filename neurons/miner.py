@@ -422,6 +422,9 @@ class Miner(BaseNeuron):
 
         refresh_agents_interval = int(os.getenv("REFRESH_AGENTS_INTERVAL", 60 * 5))  # seconds
 
+        logger.info(f"[MINER] Using LLM model: {model} for miner self-owned agent")
+        logger.info(f"[MINER] Using KEY: {utils.format_openai_key()}")
+
         while True:
             try:
                 await self.agent_manager.start(mode == "pull", role="miner")

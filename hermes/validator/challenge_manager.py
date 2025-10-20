@@ -103,10 +103,12 @@ class ChallengeManager:
         # self.scores = torch.zeros_like(torch.tensor(self.settings.metagraph.S), dtype=torch.float32)
         # self.device = 'cpu'
         self.set_weight_interval = int(os.getenv("SET_WEIGHT_INTERVAL", 60 * 30))  # seconds
+        
         logger.info(f"[ChallengeManager] Set weight interval set to {self.set_weight_interval} seconds")
 
         logger.info(f"[ChallengeManager] Using LLM model: {synthetic_model_name} for synthetic challenge")
         logger.info(f"[ChallengeManager] Using LLM model: {score_model_name} for scoring")
+        logger.info(f"[ChallengeManager] Using KEY: {utils.format_openai_key()}")
 
     async def start(self):
         try:

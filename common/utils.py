@@ -232,6 +232,16 @@ def format_openai_message(content: str, finish_reason=None) -> str:
     }
     return f"data: {json.dumps(chunk_data)}\n\n"
 
+def format_openai_key() -> str:
+    # Format API key to show only first 6 and last 4 characters
+    api_key = os.getenv('OPENAI_API_KEY')
+    if api_key and len(api_key) > 10:
+        formatted_key = f"{api_key[:6]}****{api_key[-4:]}"
+    else:
+        formatted_key = "****" if api_key else "Not Set"
+    return formatted_key
+
+
 def fix_float(elapsed: float) -> float:
     return int(elapsed * 100) / 100
 
