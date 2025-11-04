@@ -1,16 +1,17 @@
 from dataclasses import asdict, dataclass
-import hashlib
 import json
 import os
 from pathlib import Path
 import sys
-from typing import Any, Dict, List, Optional
+from typing import Dict, List
 import aiohttp
 import httpx
 from langchain_openai import ChatOpenAI
 from loguru import logger
 from pydantic import BaseModel
 import yaml
+from agent.subquery_graphql_agent.base import ProjectConfig
+from agent.subquery_graphql_agent.node_types import detect_node_type
 import common.utils as utils
 
 
@@ -35,51 +36,6 @@ class ProjectListResponse(BaseModel):
     code: int
     message: str
     data: ProjectData
-
-
-class GraphqlProvider:
-    """Supported GraphQL provider types."""
-    SUBQL = "subql"
-    THE_GRAPH = "thegraph"
-    UNKNOWN = "unknown"
-    
-    @classmethod
-    def all_values(cls) -> List[str]:
-        """Get all valid provider type values."""
-        return [cls.SUBQL, cls.THE_GRAPH, cls.UNKNOWN]
-        
-@dataclass
-class ProjectConfig:
-    """Configuration for a SubQuery or The Graph project."""
-    cid: str
-    endpoint: str
-    schema_content: str
-    node_type: str = GraphqlProvider.SUBQL
-    manifest: Dict[str, Any] = None
-    domain_name: str = "GraphQL Project"
-    domain_capabilities: List[str] = None
-    decline_message: str = "I'm specialized in this project's data queries. I can help you with the indexed blockchain data, but I cannot assist with [their topic]. Please ask me about this project's data instead."
-    suggested_questions: List[str] = None
-    authorization: Optional[str] = None
-    cid_hash: Optional[str] = None
-    
-    def __post_init__(self):
-        if self.manifest is None:
-            self.manifest = {}
-        if self.domain_capabilities is None:
-            self.domain_capabilities = [
-                "Blockchain data indexed by this project",
-                "Entity relationships and queries",
-                "Project-specific metrics and analytics"
-            ]
-        if self.suggested_questions is None:
-            self.suggested_questions = [
-                "What types of data can I query from this project?",
-                "Show me a sample GraphQL query",
-                "What entities are available in this schema?",
-                "How can I filter the data?"
-            ]
-
 
 ALLOWED_CID = []
 
@@ -225,6 +181,9 @@ class ProjectManager:
             manifest = await self.pull_manifest(cid)
             schema_content = await self.pull_schema(cid, manifest)
 
+            detected_node_type = detect_node_type(manifest)
+            logger.info(f"Detected node type: {detected_node_type}")
+            
             llm_analysis = await self.analyze_project_with_llm(manifest, schema_content, llm=self.llm)
 
             config = ProjectConfig(
@@ -232,6 +191,7 @@ class ProjectManager:
                 endpoint=endpoint,
                 cid_hash=cid_hash,
                 schema_content=schema_content,
+                node_type=detected_node_type,
                 manifest=manifest,
                 domain_name=llm_analysis["domain_name"],
                 domain_capabilities=llm_analysis["domain_capabilities"],

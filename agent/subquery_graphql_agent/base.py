@@ -1,5 +1,6 @@
 """Base GraphQL Toolkit implementation."""
 
+from dataclasses import dataclass
 import os
 import logging
 from typing import List, Optional, Dict, Any
@@ -168,13 +169,13 @@ class GraphQLToolkit(BaseToolkit):
     def dialect(self) -> str:
         """Get the dialect name."""
         return "graphql"
-
+@dataclass
 class ProjectConfig:
     """Configuration for a SubQuery or The Graph project."""
     cid: str
     endpoint: str
-    cid_hash: Optional[str] = None
     schema_content: str
+    cid_hash: Optional[str] = None
     node_type: str = GraphqlProvider.UNKNOWN
     manifest: Dict[str, Any] = None
     domain_name: str = "GraphQL Project"

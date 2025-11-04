@@ -169,7 +169,9 @@ class ChallengeManager:
                         uids.append(u)
                         hotkeys.append(miner_hotkeys[idx])
 
-                if not uids:
+                skip_query_miner = os.getenv("SKIP_QUERY_MINER", "false").lower() == "true"
+
+                if not skip_query_miner and not uids:
                     logger.warning("[ChallengeManager] No available miners for challenge, skipping this round.")
                     await asyncio.sleep(self.challenge_interval)
                     continue
@@ -177,6 +179,11 @@ class ChallengeManager:
                 project_score_matrix = []
 
                 for cid_hash, project_config in projects.items():
+                    allowed_cid_hashs = os.getenv("ALLOWED_PROJECT_CID_HASHS", "").split(",")
+                    if allowed_cid_hashs and cid_hash not in allowed_cid_hashs:
+                        logger.info(f"[ChallengeManager] - {cid_hash} Skipping project not in allowed list")
+                        continue
+
                     # Retry loop: attempt to generate a valid challenge for this project
                     max_retries = int(os.getenv("CHALLENGE_GENERATION_MAX_RETRIES", 3))
                     challenge_generated = False
@@ -223,6 +230,9 @@ class ChallengeManager:
                     # Skip this project if all retries failed
                     if not challenge_generated:
                         logger.error(f"[ChallengeManager] - {cid_hash} Failed to generate valid challenge after {max_retries} attempts, skipping project")
+                        continue
+
+                    if skip_query_miner:
                         continue
 
                     # query all miner
@@ -295,9 +305,9 @@ class ChallengeManager:
     async def test_ground_truth_token(self):
         try:
             questions = [
-                'Which  indexer   currently  has the  highest  total stake  across  all their delegations?',
-                'What   is   the average   commission   rate  (as  a  percentage)  charged  by  indexers  who have updated their rates within the last 10 eras?',
-                'Which    deployment   has  received  the  highest  cumulative  consumer  boost in  net tokens added minus removed?',
+                'Which indexer currently has the highest total stake across all their delegations?',
+                'What is the average commission rate (as a percentage) charged by indexers who have updated their rates within the last 10 eras?',
+                'Which deployment has received the highest cumulative consumer boost in net tokens added minus removed?',
                 # 'Which indexer currently has the highest total stake across all their delegations plus self-stake?'
             ]
             
