@@ -304,18 +304,30 @@ class ChallengeManager:
 
     async def test_ground_truth_token(self):
         try:
+            # SubQuery
             questions = [
                 'Which indexer currently has the highest total stake across all their delegations?',
                 'What is the average commission rate (as a percentage) charged by indexers who have updated their rates within the last 10 eras?',
                 'Which deployment has received the highest cumulative consumer boost in net tokens added minus removed?',
                 # 'Which indexer currently has the highest total stake across all their delegations plus self-stake?'
             ]
+
+            # The Graph
+            questions = [
+                'What  is  the largest  number of liquidity providers any single trading pool currently has?',
+                'How  many  transactions has the exchange processed in total?',
+                'What  was  the exchange\'s total trading volume in USD for the most recent day?',
+            ]
             
             projects = self.agent_manager.get_projects()
 
             for cid_hash, project_config in projects.items():
-                logger.info(f"start testing: {cid_hash}")
+                allowed_cid_hashs = os.getenv("ALLOWED_PROJECT_CID_HASHS", "").split(",")
+                if allowed_cid_hashs and cid_hash not in allowed_cid_hashs:
+                        continue
                 
+                logger.info(f"start testing: {cid_hash}")
+
                 total_input_tokens = 0
                 total_input_cache_tokens = 0
                 total_output_tokens = 0
