@@ -156,7 +156,7 @@ class ChallengeManager:
 
     async def challenge_loop(self):
         try:
-            block_cache: dict[str, str] = {}
+            block_cache: dict[str, int] = {}
             benchmark = BenchMark(self.settings.wallet, self.meta_config)
             while not self.event_stop.is_set():
                 await asyncio.sleep(self.challenge_interval)
@@ -211,6 +211,7 @@ class ChallengeManager:
                             round_id=self.round_id
                         )
                         # question = "What is the total delegation amount across all indexers in the current era?"
+                        # question = "What  is  the largest  number of liquidity providers any single trading pool currently has?"
                         if not question:
                             logger.warning(f"[ChallengeManager] - {cid_hash} Failed to generate question (attempt {attempt + 1}/{max_retries})")
                             continue
@@ -224,16 +225,14 @@ class ChallengeManager:
                         if latest_block is not None:
                             block_cache[cid_hash] = latest_block
                         
-                        min_block = max(0, block_cache[cid_hash] - 1000)
-                        random_block_height = random.randint(min_block, block_cache[cid_hash])
-                        logger.info(f"[ChallengeManager] - {cid_hash} Selected block height: {random_block_height} (range: {min_block}-{block_cache[cid_hash]})")
+                        logger.info(f"[ChallengeManager] - {cid_hash} Selected block height: {block_cache[cid_hash]}")
 
                         success, ground_truth, ground_cost, metrics_data = await self.generate_ground_truth(
                             cid_hash=cid_hash,
                             question=question,
                             token_usage_metrics=self.token_usage_metrics,
                             round_id=self.round_id,
-                            block_height=random_block_height
+                            block_height=block_cache[cid_hash]
                         )
 
                         is_valid = success and utils.is_ground_truth_valid(ground_truth)
@@ -274,7 +273,7 @@ class ChallengeManager:
                             cid_hash=cid_hash,
                             challenge_id=challenge_id,
                             question=question,
-                            block_height=random_block_height
+                            block_height=block_cache[cid_hash]
                         ) for uid in uids)
                     )
 

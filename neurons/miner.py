@@ -27,7 +27,7 @@ from loguru import logger
 from loguru._logger import Logger
 from bittensor.core.stream import StreamingSynapse
 from agent.stats import Phase, ProjectUsageMetrics, TokenUsageMetrics
-from common.prompt_template import SYNTHETIC_MINER_PROMPT
+from common.prompt_template import get_miner_self_tool_prompt
 from langchain_core.messages import HumanMessage, SystemMessage
 from common.table_formatter import table_formatter
 from common.agent_manager import AgentManager
@@ -191,8 +191,12 @@ class Miner(BaseNeuron):
         type = 0
         question = task.get_question()
         is_synthetic = True
+
+        cid_hash = task.cid_hash
+        graph, graphql_agent = self.agent_manager.get_miner_agent(cid_hash)
+
         messages = [
-            SystemMessage(content=SYNTHETIC_MINER_PROMPT.format(block_height=task.block_height)),
+            SystemMessage(content=get_miner_self_tool_prompt(block_height=task.block_height, node_type=graphql_agent.config.node_type if graphql_agent else "unknown")),
             HumanMessage(content=question)
         ]
 
@@ -203,9 +207,6 @@ class Miner(BaseNeuron):
             phase = Phase.MINER_ORGANIC
             messages = task.to_messages()
 
-        cid_hash = task.cid_hash
-        graph, graphql_agent = self.agent_manager.get_miner_agent(cid_hash)
-
         tool_hit = []
         graphql_agent_inner_tool_calls = []
         answer = None
@@ -213,8 +214,6 @@ class Miner(BaseNeuron):
         error = None
         status_code = ErrorCode.SUCCESS
 
-        # exclude_tools = [t.name for t in graphql_agent.tools]
-        exclude_tools = []
         before = time.perf_counter()
 
         usage_info = ''
@@ -224,8 +223,6 @@ class Miner(BaseNeuron):
                 error = f"No agent found for project {cid_hash}"
                 status_code = ErrorCode.AGENT_NOT_FOUND
             else:
-                # messages = [SystemMessage(content=SYS_CONTENT), HumanMessage(content=question)]
-                # messages = [HumanMessage(content="Add 3 and 4. Multiply the output by 2. Divide the output by 5")]
                 r = await graph.ainvoke({"messages": messages, "block_height": task.block_height})
 
                 usage_info = self.token_usage_metrics.append(cid_hash, phase, r)

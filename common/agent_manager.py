@@ -1,6 +1,7 @@
 import importlib
 import json
 from pathlib import Path
+import time
 from typing import Literal
 import pkgutil
 import sys
@@ -26,7 +27,6 @@ from langchain_core.messages import SystemMessage
 from agent.stats import ToolCountHandler
 from agent.subquery_graphql_agent.base import GraphQLAgent
 from common.project_manager import ProjectConfig, ProjectManager
-from common.prompt_template import BLOCK_HEIGHT_RULE_PROMPT
 from common.protocol import ExtendedMessagesState
 import common.utils as utils
 
@@ -168,14 +168,20 @@ class AgentManager:
 
                         # Get block_height from state, default to 0 if not present
                         block_height = state.get("block_height", 0) if isinstance(state, dict) else getattr(state, "block_height", 0)
-                        sys_msg = BLOCK_HEIGHT_RULE_PROMPT.format(block_height=block_height)
-                        messages_with_system = [SystemMessage(content=sys_msg)] + human_messages
-                        
+                        # sys_msg = BLOCK_HEIGHT_RULE_PROMPT.format(block_height=block_height)
+                        # messages_with_system = [SystemMessage(content=sys_msg)] + human_messages
+                        start_time = time.perf_counter()
+                        prompt_cache_key=f"{agent.config.cid_hash}_{start_time}"
+
                         response = await agent.executor.ainvoke(
-                            {"messages": messages_with_system},
+                            {"messages": human_messages},
                             config={
                                 "recursion_limit": 12,
-                            }
+                                "configurable": {
+                                    "block_height": block_height,
+                                }
+                            },
+                            prompt_cache_key=prompt_cache_key
                         )
                         if enable_log:
                             logger.info(f" --------call_graphql_agent------ response: {response} ")

@@ -62,11 +62,11 @@ class ScorerManager:
             return 0.0
         
         # SECURITY: Sanitize miner response to detect/log prompt injection attempts
-        sanitized_response = sanitize_for_evaluation(miner_synapse.response, max_length=5000)
+        # sanitized_response = sanitize_for_evaluation(miner_synapse.response, max_length=5000)
         
         question_prompt = SCORE_PROMPT.format(
             ground_truth=ground_truth, 
-            miner_answer=sanitized_response  # Use sanitized response
+            miner_answer=miner_synapse.response  # Use sanitized response
         )
         try :
             summary_response = await self.llm_score.ainvoke([HumanMessage(content=question_prompt)])

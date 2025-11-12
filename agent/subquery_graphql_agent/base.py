@@ -17,8 +17,6 @@ from .tools import (
     GraphQLQueryValidatorAndExecutedTool,
     GraphQLSchemaInfoTool,
     GraphQLTypeDetailTool,
-    GraphQLQueryValidatorTool,
-    GraphQLExecuteTool
 )
 
 from .node_types import GraphqlProvider, detect_node_type
@@ -253,12 +251,13 @@ class GraphQLAgent:
             prompt=prompt
         )
 
-    async def query_no_stream(self, question, prompt_cache_key: str = '', is_synthetic: bool = False, block_height: str = 0):
+    async def query_no_stream(self, question: str, prompt_cache_key: str = '', is_synthetic: bool = False, block_height: str = 0):
         """Execute a non-streaming query.
 
         Args:
             question: The query question
             is_synthetic: Whether this is a synthetic challenge (affects domain filtering behavior)
+            block_height: The block height for time-travel queries
         """
         # Create appropriate system prompt based on query type
         prompt = create_system_prompt(
@@ -266,7 +265,6 @@ class GraphQLAgent:
             domain_capabilities=self.config.domain_capabilities,
             decline_message=self.config.decline_message,
             is_synthetic=is_synthetic,
-            block_height=block_height
         )
 
         # Create a temporary agent with the appropriate prompt
@@ -277,9 +275,14 @@ class GraphQLAgent:
         )
 
         response = await temp_executor.ainvoke(
-            {"messages": [{"role": "user", "content": question}]},
+            {
+                "messages": [{"role": "user", "content": question}],
+            },
             config={
                 "recursion_limit": 12,
+                "configurable": {
+                    "block_height": block_height,
+                }
             },
             prompt_cache_key=prompt_cache_key
         )

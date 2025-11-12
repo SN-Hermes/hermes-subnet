@@ -249,15 +249,9 @@ SCORE_PROMPT = PromptTemplate(
     template=score_template
 )
 
-block_height_rule = """
-🚨 CRITICAL BLOCK HEIGHT RULE:
-- CURRENT BLOCK HEIGHT: ##{block_height}##
-- IF CURRENT BLOCK HEIGHT is NOT 0 (non-zero value):
-  * ALL GraphQL queries MUST include the blockHeight parameter
-  * Set blockHeight to the CURRENT BLOCK HEIGHT value
-  * This ensures queries return data at the specified block state
-  
-  ✅ CORRECT (when CURRENT BLOCK HEIGHT = 5460865):
+def get_miner_self_tool_prompt(block_height: int = 0, node_type: str = "") -> str:
+    if node_type == "subql":
+        example = """✅ CORRECT (when CURRENT BLOCK HEIGHT = 5460865):
   {{
     indexers(first: 5, blockHeight: "5460865") {{ nodes {{ id totalStake }} }}
   }}
@@ -273,20 +267,30 @@ block_height_rule = """
   ❌ WRONG (missing blockHeight when CURRENT BLOCK HEIGHT is non-zero):
   {{
     indexers(first: 5) {{ nodes {{ id totalStake }} }}
+  }}"""
+    elif node_type == "thegraph":
+        example = """✅ CORRECT (when CURRENT BLOCK HEIGHT = 4331513):
+  {{
+    swap(
+      id: "0x0000250ebe403453ebbaaf1e4499e36804b0bea7bf004d0eba24d5d05654317e-1"
+      block: {{number: 4331513}}
+    ) {{
+      id
+      to
+    }}
   }}
 
-- IF CURRENT BLOCK HEIGHT is 0:
-  * Do NOT add blockHeight parameter to queries
-  * Query normally without blockHeight
-
-"""
-
-BLOCK_HEIGHT_RULE_PROMPT = PromptTemplate(
-    input_variables=["block_height"],
-    template=block_height_rule
-)
-
-synthetic_miner = """
+  ❌ WRONG (missing block parameter when CURRENT BLOCK HEIGHT is non-zero):
+  {{
+    swap(id: "0x0000250ebe403453ebbaaf1e4499e36804b0bea7bf004d0eba24d5d05654317e-1") {{
+      id
+      to
+    }}
+  }}"""
+    else:
+        example = ""
+    
+    return f"""
 You are an assistant that can use tools to answer questions.
 Rules:
 1. Always use the relevant tool(s) first before generating any direct answer.
@@ -300,28 +304,7 @@ Rules:
   * Set blockHeight to the CURRENT BLOCK HEIGHT value
   * This ensures queries return data at the specified block state
   
-  ✅ CORRECT (when CURRENT BLOCK HEIGHT = 5460865):
-  {{
-    indexers(first: 5, blockHeight: "5460865") {{ nodes {{ id totalStake }} }}
-  }}
-
-  {{
-    indexer(id: "0x123", blockHeight: "5460865") {{ id totalStake }}
-  }}
-  
-  {{
-    deployments(first: 5, orderBy: AMOUNT_DESC, blockHeight: "5460865") {{ nodes {{ id amount }} }}
-  }}
-
-  ❌ WRONG (missing blockHeight when CURRENT BLOCK HEIGHT is non-zero):
-  {{
-    indexers(first: 5) {{ nodes {{ id totalStake }} }}
-  }}
+  {example}
 
 Follow these rules strictly and do not deviate.
 """
-
-SYNTHETIC_MINER_PROMPT = PromptTemplate(
-    input_variables=["block_height"],
-    template=synthetic_miner
-)

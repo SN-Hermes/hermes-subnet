@@ -2,12 +2,13 @@
 
 import json
 import asyncio
-from typing import Optional, Type, Dict, Any
+from typing import Optional, Type, Dict, Any, Annotated
 from pydantic import BaseModel, Field, ConfigDict
 from loguru import logger
 import graphql
 from graphql import build_client_schema, validate
-from langchain_core.tools import BaseTool
+from langchain_core.tools import BaseTool, InjectedToolArg
+from langchain_core.runnables import RunnableConfig
 from langchain_core.callbacks import CallbackManagerForToolRun, AsyncCallbackManagerForToolRun
 
 from .graphql import process_graphql_schema
@@ -53,30 +54,38 @@ class GraphQLSchemaInfoTool(BaseTool):
     
     def _run(
         self,
-        run_manager: Optional[CallbackManagerForToolRun] = None,
+        run_manager: Optional[AsyncCallbackManagerForToolRun] = None,
+        config: Annotated[RunnableConfig, InjectedToolArg] = None,
     ) -> str:
         """Get GraphQL schema info synchronously."""
-        return asyncio.run(self._arun())
+        return asyncio.run(self._arun(config=config, run_manager=run_manager))
     
     async def _arun(
         self,
         run_manager: Optional[AsyncCallbackManagerForToolRun] = None,
+        config: Annotated[RunnableConfig, InjectedToolArg] = None,
     ) -> str:
         """Get raw GraphQL schema with automatic node type detection and appropriate guidance."""
         try:
+            # Extract block_height from config
+            block_height = 0
+            if config and "configurable" in config:
+                block_height = config["configurable"].get("block_height", 0)
+            # logger.info(f"[GraphQLSchemaInfoTool._arun] block_height from config: {block_height}")
+
             # Get raw schema from GraphQL source
             schema_content = self.graphql_source.entity_schema
             
             # Generate appropriate schema info based on node type
             if self._node_type == GraphqlProvider.THE_GRAPH:
-                return create_thegraph_schema_info_content(schema_content)
+                return create_thegraph_schema_info_content(schema_content, block_height)
             elif self._node_type == GraphqlProvider.SUBQL:
-                return self._generate_subql_info(schema_content)
+                return self._generate_subql_info(schema_content, block_height)
             
         except Exception as e:
             return f"Error reading schema info: {str(e)}"
-    
-    def _generate_subql_info(self, schema_content: str) -> str:
+
+    def _generate_subql_info(self, schema_content: str, block_height: int) -> str:
         """Generate SubQL-specific schema information."""
         return f"""📖 SUBQL (POSTGRAPHILE v4) SCHEMA & RULES:
 
@@ -153,10 +162,9 @@ class GraphQLSchemaInfoTool(BaseTool):
    - {{ indexers {{ groupedAggregates(groupBy: [PROJECT_ID]) {{ keys, sum {{ totalReward }} }} }} }}
 
 🚨 CRITICAL AGENT RULES:
-1. ALWAYS validate queries with graphql_query_validator before executing
-2. For missing user info ("my rewards"), ASK for wallet/ID - NEVER fabricate data
-3. Pass queries to graphql_execute as plain text (no backticks/quotes)
-4. Only use graphql_type_detail as FALLBACK when validation fails - prefer raw schema
+1. For missing user info ("my rewards"), ASK for wallet/ID - NEVER fabricate data
+2. Pass queries to graphql_query_validator_execute as plain text (no backticks/quotes)
+3. Only use graphql_type_detail as FALLBACK when validation fails - prefer raw schema
 
 ⚠️ CRITICAL FOREIGN KEY RULES:
 - Fields with @derivedFrom CANNOT be queried alone - they need subfield selection
@@ -211,85 +219,6 @@ class GraphQLSchemaInfoTool(BaseTool):
 ✅ {{ indexers {{ groupedAggregates(groupBy: [PROJECT_ID]) {{ keys, sum {{ totalReward }}, distinctCount {{ id }} }} }} }}
 ✅ {{ rewards {{ groupedAggregates(groupBy: [ERA, INDEXER_ID], having: {{ era: {{ greaterThan: 100 }} }}) {{ keys, sum {{ amount }} }} }} }}
 
-💡 NOW USE THE RAW SCHEMA ABOVE TO:
-1. Find @entity types (e.g., Project, Indexer) 
-2. Infer queries: project(id), projects(filter/pagination)
-3. Identify field types to determine foreign key relationships
-4. Construct your GraphQL query using the patterns above
-5. Validate the query, then execute it
-
-DO NOT call graphql_schema_info again - everything needed is above."""
-    
-    def _generate_thegraph_info(self, schema_content: str) -> str:
-        """Generate The Graph-specific schema information."""
-        return create_thegraph_schema_info_content(schema_content)
-
-def create_system_prompt(
-    domain_name: str,
-    domain_capabilities: list,
-    decline_message: str,
-    is_synthetic: bool = False,
-    block_height: int = 0
-) -> str:
-    """
-    Create a system prompt for langgraph GraphQL agent.
-
-    Args:
-        domain_name: Name of the domain/project (e.g., "SubQuery Network", "DeFi Protocol")
-        domain_capabilities: List of capabilities/data types the agent can help with
-        decline_message: Custom message when declining out-of-scope requests
-        is_synthetic: Whether this is a synthetic challenge (affects domain filtering behavior)
-
-    Returns:
-        str: System prompt for langgraph agent
-    """
-    capabilities_text = '\n'.join([f"- {cap}" for cap in domain_capabilities])
-    
-    if is_synthetic:
-        # For synthetic challenges, always attempt to answer without domain limitations
-        return f"""You are a GraphQL assistant helping with data queries for {domain_name}. You can help users find information about:
-{capabilities_text}
-
-IMPORTANT: This is a synthetic challenge. ALWAYS attempt to answer the query to the best of your ability using the available GraphQL schema and tools. Do not use domain limitations to refuse answering synthetic challenges.
-
-RESPONSE STYLE: Provide complete, definitive responses. Do NOT ask follow-up questions unless essential information is missing.
-
-ERROR HANDLING:
-- If you cannot complete the request due to technical limitations (e.g., insufficient recursion steps, tool failures, schema issues), you MUST respond with EXACTLY this format:
-  "ERROR: [brief reason]"
-- Examples:
-  - "ERROR: Insufficient recursion limit to process this complex query"
-  - "ERROR: Required entity not found in schema"
-  - "ERROR: Query validation failed"
-- Do NOT use phrases like "Sorry, need more steps" or other informal error messages
-- Do NOT provide partial answers when you encounter errors - use the ERROR format
-
-WORKFLOW:
-1. Start with graphql_schema_info to understand available entities and query patterns
-2. BEFORE constructing ANY query, analyze if you need multiple queries:
-   - If NO data dependency: Combine ALL into ONE query using aliases
-   - If there IS data dependency: You may query sequentially (e.g., get ID first, then query details)
-3. Construct your GraphQL query(ies) to fetch needed data
-4. Validate and Execute with graphql_query_validator_execute
-5. ⚠️ CRITICAL: After query execution, CHECK if results contain the answer
-   - If YES → Immediately provide final answer (DO NOT query again)
-   - If NO → Only then consider if a second query is truly necessary
-6. Provide clear, user-friendly summaries of the results
-
-⚠️ CRITICAL RULES - TOOL CALL LIMIT:
-- You can call graphql_query_validator_execute AT MOST 2 times per question
-- Call Counter: Count how many times you've called this tool already
-- Before 2nd call: Ask yourself "Is this really necessary? Does my first result already answer the question?"
-- If you used orderBy DESC: The FIRST result is the maximum/highest - DO NOT query again with first:1
-- NEVER change pagination (first:5 → first:1) to "verify" - that's a waste!
-- NEVER incrementally adjust filter conditions (>= 85 → >= 84 → >= 83) - use broader range from start!
-- NEVER randomly try different filter values (>= -10 → >= 75 → >= 70) - think about logic first!
-- If first query returns empty/insufficient → Analyze WHY, then make ONE logical adjusted query
-- Think: "What filter range would logically cover the data I need?" before querying
-- If queries have NO data dependency → MUST combine into ONE query
-- If second query needs result from first → You MAY query twice (but minimize this)
-- NEVER query the same entity twice for different fields that could be fetched together
-- ALWAYS check if first query results already answer the question before querying again
 
 When Constructing GraphQL queries, You Must follow these strict rules:
 
@@ -614,6 +543,86 @@ If looking for recent indexers by commission era:
   * Do NOT add blockHeight parameter to queries
   * Query normally without blockHeight
 
+  
+💡 NOW USE THE RAW SCHEMA ABOVE TO:
+1. Find @entity types (e.g., Project, Indexer) 
+2. Infer queries: project(id), projects(filter/pagination)
+3. Identify field types to determine foreign key relationships
+4. Construct your GraphQL query using the patterns above
+5. Validate the query, then execute it
+
+DO NOT call graphql_schema_info again - everything needed is above."""
+    
+    def _generate_thegraph_info(self, schema_content: str) -> str:
+        """Generate The Graph-specific schema information."""
+        return create_thegraph_schema_info_content(schema_content)
+
+def create_system_prompt(
+    domain_name: str,
+    domain_capabilities: list,
+    decline_message: str,
+    is_synthetic: bool = False,
+) -> str:
+    """
+    Create a system prompt for langgraph GraphQL agent.
+
+    Args:
+        domain_name: Name of the domain/project (e.g., "SubQuery Network", "DeFi Protocol")
+        domain_capabilities: List of capabilities/data types the agent can help with
+        decline_message: Custom message when declining out-of-scope requests
+        is_synthetic: Whether this is a synthetic challenge (affects domain filtering behavior)
+
+    Returns:
+        str: System prompt for langgraph agent
+    """
+    capabilities_text = '\n'.join([f"- {cap}" for cap in domain_capabilities])
+    
+    if is_synthetic:
+        # For synthetic challenges, always attempt to answer without domain limitations
+        return f"""You are a GraphQL assistant helping with data queries for {domain_name}. You can help users find information about:
+{capabilities_text}
+
+IMPORTANT: This is a synthetic challenge. ALWAYS attempt to answer the query to the best of your ability using the available GraphQL schema and tools. Do not use domain limitations to refuse answering synthetic challenges.
+
+RESPONSE STYLE: Provide complete, definitive responses. Do NOT ask follow-up questions unless essential information is missing.
+
+ERROR HANDLING:
+- If you cannot complete the request due to technical limitations (e.g., insufficient recursion steps, tool failures, schema issues), you MUST respond with EXACTLY this format:
+  "ERROR: [brief reason]"
+- Examples:
+  - "ERROR: Insufficient recursion limit to process this complex query"
+  - "ERROR: Required entity not found in schema"
+  - "ERROR: Query validation failed"
+- Do NOT use phrases like "Sorry, need more steps" or other informal error messages
+- Do NOT provide partial answers when you encounter errors - use the ERROR format
+
+WORKFLOW:
+1. Start with graphql_schema_info to understand available entities and query patterns
+2. BEFORE constructing ANY query, analyze if you need multiple queries:
+   - If NO data dependency: Combine ALL into ONE query using aliases
+   - If there IS data dependency: You may query sequentially (e.g., get ID first, then query details)
+3. Construct your GraphQL query(ies) to fetch needed data
+4. Validate and Execute with graphql_query_validator_execute
+5. ⚠️ CRITICAL: After query execution, CHECK if results contain the answer
+   - If YES → Immediately provide final answer (DO NOT query again)
+   - If NO → Only then consider if a second query is truly necessary
+6. Provide clear, user-friendly summaries of the results
+
+⚠️ CRITICAL RULES - TOOL CALL LIMIT:
+- You can call graphql_query_validator_execute AT MOST 2 times per question
+- Call Counter: Count how many times you've called this tool already
+- Before 2nd call: Ask yourself "Is this really necessary? Does my first result already answer the question?"
+- If you used orderBy DESC: The FIRST result is the maximum/highest - DO NOT query again with first:1
+- NEVER change pagination (first:5 → first:1) to "verify" - that's a waste!
+- NEVER incrementally adjust filter conditions (>= 85 → >= 84 → >= 83) - use broader range from start!
+- NEVER randomly try different filter values (>= -10 → >= 75 → >= 70) - think about logic first!
+- If first query returns empty/insufficient → Analyze WHY, then make ONE logical adjusted query
+- Think: "What filter range would logically cover the data I need?" before querying
+- If queries have NO data dependency → MUST combine into ONE query
+- If second query needs result from first → You MAY query twice (but minimize this)
+- NEVER query the same entity twice for different fields that could be fetched together
+- ALWAYS check if first query results already answer the question before querying again
+
 For missing user info (like "my rewards", "my tokens"), always ask for the specific wallet address or ID rather than fabricating data."""
     else:
         # For organic queries, use domain-based filtering
@@ -630,9 +639,8 @@ IF NOT RELATED to {domain_name}:
 IF RELATED to {domain_name} data:
 1. Start with graphql_schema_info to understand available entities and query patterns
 2. Construct proper GraphQL queries based on the schema
-3. Validate queries with graphql_query_validator before execution
-4. Execute queries with graphql_execute
-5. Provide clear, user-friendly summaries of the results, without explanation for the process.
+3. Execute queries with graphql_query_validator_execute
+4. Provide clear, user-friendly summaries of the results, without explanation for the process.
 
 For missing user info (like "my rewards", "my tokens"), always ask for the specific wallet address or ID rather than fabricating data."""
 
