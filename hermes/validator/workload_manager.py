@@ -231,7 +231,7 @@ class WorkloadManager:
                         question = response.get_question()
                         logger.info(f"[WorkloadManager] compute organic task({response.id}) for miner: {miner_uid}, response: {response}. question: {question}")
 
-                        success, ground_truth, ground_cost, metrics_data = await self.challenge_manager.generate_ground_truth(
+                        success, ground_truth, ground_cost, metrics_data, model_name = await self.challenge_manager.generate_ground_truth(
                             cid_hash=response.cid_hash,
                             question=question,
                             token_usage_metrics=self.token_usage_metrics,
@@ -276,6 +276,11 @@ class WorkloadManager:
                             challenge_id=response.id,
                             challenge_type=ChallengeType.ORGANIC_STREAM.value,
                             question=response.get_question(),
+
+                            question_generator_model_name='',
+                            ground_truth_model_name=model_name[:50],
+                            score_model_name=self.challenge_manager.scorer_manager.llm_score.model_name[:50],
+
                             ground_truth=ground_truth[:500] if ground_truth else None,
                             ground_cost=ground_cost,
                             ground_truth_tools=[json.loads(t) for t in metrics_data.get("tool_calls", [])],
@@ -287,6 +292,8 @@ class WorkloadManager:
                             {
                                 "uid": uid,
                                 "address": hotkey,
+                                "minerModelName": resp.miner_model_name[:50],
+                                "graphqlAgentModelName": resp.graphql_agent_model_name[:50],
                                 "elapsed": elapse_time,
                                 "truthScore": truth_score,
                                 "statusCode": resp.status_code,

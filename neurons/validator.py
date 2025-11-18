@@ -30,7 +30,7 @@ import uvicorn
 from multiprocessing.synchronize import Event
 from common.meta_config import MetaConfig
 from common.table_formatter import table_formatter
-from common.enums import ErrorCode
+from common.enums import ErrorCode, RoleFlag
 from common.logger import HermesLogger
 from common.protocol import CapacitySynapse, ChatCompletionRequest, OrganicNonStreamSynapse, OrganicStreamSynapse
 import common.utils as utils
@@ -116,7 +116,7 @@ class Validator(BaseNeuron):
             synthetic_token_usage: list,
             ipc_common_config: dict,
         ):
-        super().start()
+        super().start(flag=RoleFlag.VALIDATOR)
         self.organic_score_queue = organic_score_queue
         self.miners_dict = miners_dict
         self.synthetic_score = synthetic_score
@@ -296,6 +296,8 @@ class Validator(BaseNeuron):
                                     "response": final_synapse.response,
                                     "status_code": final_synapse.status_code,
                                     "error": final_synapse.error,
+                                    "miner_model_name": final_synapse.miner_model_name,
+                                    "graphql_agent_model_name": final_synapse.graphql_agent_model_name,
                                     "elapsed_time": final_synapse.elapsed_time,
                                     "usage_info": final_synapse.usage_info,
                                     "graphql_agent_inner_tool_calls": final_synapse.graphql_agent_inner_tool_calls,

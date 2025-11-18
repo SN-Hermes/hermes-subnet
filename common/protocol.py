@@ -38,6 +38,9 @@ class BaseSynapse(bt.Synapse):
     error: str | None = None
     elapsed_time: float | None = 0.0
 
+    miner_model_name: str | None = ''
+    graphql_agent_model_name: str | None = ''
+
     response: str | None = ''
     usage_info: dict | None = None
     graphql_agent_inner_tool_calls: list[str] | None = None
@@ -88,6 +91,9 @@ class OrganicStreamSynapse(CompletionMessagesMixin, bt.StreamingSynapse):
     error: str | None = None
     elapsed_time: float | None = 0.0
 
+    miner_model_name: str | None = ''
+    graphql_agent_model_name: str | None = ''
+
     response: str | None = ''
     usage_info: dict | None = None
     graphql_agent_inner_tool_calls: list[str] | None = None
@@ -130,6 +136,8 @@ class OrganicStreamSynapse(CompletionMessagesMixin, bt.StreamingSynapse):
                         yield data_chunk
                     elif line_type == "meta":
                         metadata = obj.get("data", {})
+                        self.miner_model_name = metadata.get("miner_model_name", "")
+                        self.graphql_agent_model_name = metadata.get("graphql_agent_model_name", "")
                         self.elapsed_time = metadata.get("elapsed")
                         self.status_code = metadata.get("status_code")
                         self.error = metadata.get("error")
@@ -163,6 +171,8 @@ class OrganicStreamSynapse(CompletionMessagesMixin, bt.StreamingSynapse):
     def extract_response_json(self, r: "ClientResponse") -> dict:
         return {
             "hotkey": self.hotkey,
+            "miner_model_name": self.miner_model_name,
+            "graphql_agent_model_name": self.graphql_agent_model_name,
             "elapsed_time": self.elapsed_time,
             "status_code": self.status_code,
             "error": self.error,

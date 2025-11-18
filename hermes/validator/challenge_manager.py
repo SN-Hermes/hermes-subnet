@@ -230,7 +230,7 @@ class ChallengeManager:
                         
                         logger.info(f"[ChallengeManager] - {cid_hash} Selected block height: {block_cache[cid_hash]}")
 
-                        success, ground_truth, ground_cost, metrics_data = await self.generate_ground_truth(
+                        success, ground_truth, ground_cost, metrics_data, model_name = await self.generate_ground_truth(
                             cid_hash=cid_hash,
                             question=question,
                             token_usage_metrics=self.token_usage_metrics,
@@ -293,6 +293,17 @@ class ChallengeManager:
                     )
                     project_score_matrix.append(zip_scores)
 
+                    table_formatter.create_synthetic_miners_response_table(
+                        round_id=self.round_id,
+                        challenge_id=challenge_id,
+                        uids=uids,
+                        responses=responses,
+                        ground_truth_scores=ground_truth_scores,
+                        elapse_weights=elapse_weights,
+                        zip_scores=zip_scores,
+                        cid=cid_hash
+                    )
+
                     await self.benchmark.upload(
                         uid=self.V.uid,
                         address=self.settings.wallet.hotkey.ss58_address,
@@ -300,6 +311,9 @@ class ChallengeManager:
                         challenge_type=ChallengeType.SYNTHETIC.value,
                         challenge_id=challenge_id,
                         question=question,
+                        question_generator_model_name=self.llm_synthetic.model_name,
+                        ground_truth_model_name=model_name,
+                        score_model_name=self.llm_score.model_name,
                         ground_truth=ground_truth[:500] if ground_truth else None,
                         ground_cost=ground_cost,
                         ground_truth_tools=[json.loads(t) for t in metrics_data.get("tool_calls", [])],
@@ -311,6 +325,8 @@ class ChallengeManager:
                             {
                                 "uid": uid,
                                 "address": hotkey,
+                                "minerModelName": resp.miner_model_name[:50],
+                                "graphqlAgentModelName": resp.graphql_agent_model_name[:50],
                                 "elapsed": elapse_time,
                                 "truthScore": truth_score,
                                 "statusCode": resp.status_code,
@@ -324,17 +340,6 @@ class ChallengeManager:
                             }
                             for uid, hotkey, elapse_time, truth_score, resp in zip(uids, hotkeys, miners_elapse_time, ground_truth_scores, responses)
                         ],
-                    )
-
-                    table_formatter.create_synthetic_miners_response_table(
-                        round_id=self.round_id,
-                        challenge_id=challenge_id,
-                        uids=uids,
-                        responses=responses,
-                        ground_truth_scores=ground_truth_scores,
-                        elapse_weights=elapse_weights,
-                        zip_scores=zip_scores,
-                        cid=cid_hash
                     )
 
                 if not project_score_matrix:
@@ -472,16 +477,18 @@ class ChallengeManager:
             token_usage_metrics: TokenUsageMetrics | None = None,
             round_id: int = 0,
             block_height: int = 0,
-        ) -> Tuple[bool, str | None, int, dict | None]:
+        ) -> Tuple[bool, str | None, int, dict | None, str]:
         start_time = time.perf_counter()
         success = False
         result = None
         metrics_data = None
+        model_name = ""
         try:
             agent = self.agent_manager.get_graphql_agent(cid_hash)
             if not agent:
                 raise ValueError(f"No server agent found for cid: {cid_hash}")
 
+            model_name = agent.llm.model_name
             response = await agent.query_no_stream(
                 question,
                 prompt_cache_key=f"{cid_hash}_{start_time}",
@@ -517,7 +524,7 @@ class ChallengeManager:
                 raise
 
         finally:
-            return [success, result, utils.fix_float(time.perf_counter() - start_time), metrics_data]
+            return [success, result, utils.fix_float(time.perf_counter() - start_time), metrics_data, model_name]
 
     async def query_miner(
         self,

@@ -36,3 +36,9 @@ class ChallengeType(Enum):
     SYNTHETIC = 1
     ORGANIC_STREAM = 2
     ORGANIC_NONSTREAM = 3
+
+class RoleFlag(Enum):
+    NONE = 0
+    MINER = 1
+    VALIDATOR = 2
+

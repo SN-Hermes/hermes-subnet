@@ -31,14 +31,13 @@ from common.prompt_template import get_miner_self_tool_prompt, fill_miner_self_t
 from langchain_core.messages import HumanMessage, SystemMessage
 from common.table_formatter import table_formatter
 from common.agent_manager import AgentManager
-from common.enums import ErrorCode
+from common.enums import ErrorCode, RoleFlag
 from common.logger import HermesLogger
 from common.protocol import CapacitySynapse, OrganicNonStreamSynapse, OrganicStreamSynapse, StatsMiddleware, SyntheticNonStreamSynapse
 from common.sqlite_manager import SQLiteManager
 import common.utils as utils
 from common.settings import settings
 from hermes.base import BaseNeuron
-import agent.graphql_agent as subAgent
 
 ROLE = "miner"
 
@@ -62,7 +61,7 @@ class Miner(BaseNeuron):
 
     async def start(self):
         try:
-            super().start()
+            super().start(flag=RoleFlag.MINER)
 
             self.project_usage_metrics = ProjectUsageMetrics()
             self.token_usage_metrics = TokenUsageMetrics()
@@ -264,6 +263,8 @@ class Miner(BaseNeuron):
         task.status_code = status_code.value
         task.usage_info = usage_info
         task.graphql_agent_inner_tool_calls = graphql_agent_inner_tool_calls
+        task.miner_model_name = self.llm.model_name
+        task.graphql_agent_model_name = graphql_agent.llm.model_name
 
         self.put_db(
             type=type,
@@ -458,6 +459,8 @@ class Miner(BaseNeuron):
             metadata_line = json.dumps({
                 "type": "meta",
                 "data": {
+                    "miner_model_name": self.llm.model_name,
+                    "graphql_agent_model_name": graphql_agent.llm.model_name,
                     "elapsed": elapsed,
                     "status_code": status_code.value,
                     "error": error,
