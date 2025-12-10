@@ -9,7 +9,6 @@ import os
 from loguru import logger
 from pydantic import BaseModel
 from langchain_openai import ChatOpenAI
-from langchain.schema import AIMessage
 import json
 from typing import (
     Any,
@@ -19,11 +18,11 @@ from typing import (
 from langgraph.prebuilt import ToolNode
 from langchain_core.messages import (
     AIMessage,
+    SystemMessage,
     AnyMessage,
 )
 
 from langgraph.graph import StateGraph, START, END
-from langchain_core.messages import SystemMessage
 from agent.stats import ToolCountHandler
 from agent.subquery_graphql_agent.base import GraphQLAgent
 from common.project_manager import ProjectConfig, ProjectManager

@@ -5,10 +5,9 @@ import os
 import logging
 from typing import List, Optional, Dict, Any
 
-from langchain_core.tools import BaseTool
+from langchain_core.tools import BaseTool, BaseToolkit
 from langchain_core.language_models import BaseLanguageModel
 from langchain_openai import ChatOpenAI
-from langchain.agents.agent_toolkits.base import BaseToolkit
 from langgraph.prebuilt import create_react_agent
 from pydantic import ConfigDict
 

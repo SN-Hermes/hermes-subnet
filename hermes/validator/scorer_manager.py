@@ -5,7 +5,7 @@ import time
 from typing import List, Tuple
 from langchain_openai import ChatOpenAI
 from loguru import logger
-from langchain.schema import HumanMessage
+from langchain_core.messages import HumanMessage
 import numpy as np
 import torch
 from agent.stats import Phase, TokenUsageMetrics

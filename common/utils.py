@@ -8,8 +8,7 @@ from loguru import logger
 import netaddr
 import requests
 import hashlib
-from langchain.schema import BaseMessage
-from langchain.schema import AIMessage
+from langchain_core.messages import BaseMessage, AIMessage
 from datetime import datetime, timedelta
 
 

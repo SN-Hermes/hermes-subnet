@@ -245,7 +245,7 @@ class ProjectManager:
         """
         try:
             from langchain_openai import ChatOpenAI
-            from langchain.schema import HumanMessage
+            from langchain_core.messages import HumanMessage
         
             # Use provided LLM or create one with same config as GraphQLAgent
             # TODO: improve. can't change temperature dynamiclly

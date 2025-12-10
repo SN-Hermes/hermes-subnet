@@ -1,6 +1,6 @@
 import os
 from typing import Dict
-from langchain.schema import HumanMessage
+from langchain_core.messages import HumanMessage
 from collections import deque
 import difflib
 

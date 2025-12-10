@@ -2,7 +2,7 @@ import asyncio
 import os
 import dotenv
 from langchain_openai import ChatOpenAI
-from langchain.schema import HumanMessage
+from langchain_core.messages import HumanMessage
 from loguru import logger
 from common.prompt_injection_defense import sanitize_for_evaluation
 from common.prompt_template import SCORE_PROMPT
