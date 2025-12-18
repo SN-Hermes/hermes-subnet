@@ -1,4 +1,4 @@
-from langchain.prompts import PromptTemplate
+from langchain_core.prompts import PromptTemplate
 
 
 synthetic_challenge_template_V4 = """You are a question generator base on given graphql schema.
@@ -252,60 +252,70 @@ SCORE_PROMPT = PromptTemplate(
 def get_block_rule_prompt(block_height: int = 0, node_type: str = "") -> str:
     if node_type == "subql":
         example = """✅ CORRECT (when CURRENT BLOCK HEIGHT = 5460865):
-  {{
-    indexers(first: 5, blockHeight: "5460865") {{ nodes {{ id totalStake }} }}
-  }}
-
-  {{
-    indexer(id: "0x123", blockHeight: "5460865") {{ id totalStake }}
-  }}
-  
-  {{
-    deployments(first: 5, orderBy: AMOUNT_DESC, blockHeight: "5460865") {{ nodes {{ id amount }} }}
-  }}
+  {
+    indexers(first: 5, blockHeight: "5460865") { nodes { id totalStake } }
+  }
 
   ❌ WRONG (missing blockHeight when CURRENT BLOCK HEIGHT is non-zero):
-  {{
-    indexers(first: 5) {{ nodes {{ id totalStake }} }}
-  }}"""
+  {
+    indexers(first: 5) { nodes { id totalStake } }
+  }"""
     elif node_type == "thegraph":
         example = """✅ CORRECT (when CURRENT BLOCK HEIGHT = 4331513):
-  {{
+  {
     swap(
       id: "0x0000250ebe403453ebbaaf1e4499e36804b0bea7bf004d0eba24d5d05654317e-1"
-      block: {{number: 4331513}}
-    ) {{
+      block: {number: 4331513}
+    ) {
       id
       to
-    }}
-  }}
+    }
+  }
 
   ❌ WRONG (missing block parameter when CURRENT BLOCK HEIGHT is non-zero):
-  {{
-    swap(id: "0x0000250ebe403453ebbaaf1e4499e36804b0bea7bf004d0eba24d5d05654317e-1") {{
+  {
+    swap(id: "0x0000250ebe403453ebbaaf1e4499e36804b0bea7bf004d0eba24d5d05654317e-1") {
       id
       to
-    }}
-  }}"""
+    }
+  }"""
     else:
         example = ""
     
-    return f"""
-🚨 CRITICAL BLOCK HEIGHT RULE:
-- CURRENT BLOCK HEIGHT: ##{block_height}##
-- IF user's question explicitly mentions a specific block height:
-  * Use the block height from user's question
-  * Example: "What was the state at block 5000000?" → Use blockHeight: "5000000"
-- ELSE IF CURRENT BLOCK HEIGHT is NOT 0 (non-zero value):
-  * ALL GraphQL queries MUST include the blockHeight parameter
-  * Set blockHeight to the CURRENT BLOCK HEIGHT value
-  * This ensures queries return data at the specified block state
-  
-  {example}
+    if block_height == 0:
+        return """
+🚨 BLOCK HEIGHT RULE:
+- CURRENT BLOCK HEIGHT: ##0##
+- Since CURRENT BLOCK HEIGHT is 0, DO NOT add blockHeight/block parameter to any queries
+- Query normally without blockHeight/block parameter
+- ONLY add blockHeight/block parameter if the user's question explicitly mentions a specific block height
+"""
+    else:
+        block_param = "blockHeight" if node_type == "subql" else "block"
+        return f"""
+🚨 🚨 🚨 MANDATORY BLOCK HEIGHT REQUIREMENT 🚨 🚨 🚨
 
-- IF CURRENT BLOCK HEIGHT is 0 AND user didn't specify a block height:
-  * Do NOT add blockHeight parameter to queries
-  * Query normally without blockHeight
+CURRENT BLOCK HEIGHT: ##{block_height}##
+
+⚠️ ABSOLUTE REQUIREMENT - NO EXCEPTIONS:
+Every single GraphQL query you generate MUST include the {block_param} parameter set to "{block_height}".
+
+STEP-BY-STEP CHECKLIST (follow this for EVERY query):
+1. ✓ Check: Is CURRENT BLOCK HEIGHT non-zero? → YES ({block_height})
+2. ✓ Check: Did user specify a different block height? → If NO, use {block_height}
+3. ✓ ACTION: Add {block_param} parameter to your query
+4. ✓ VERIFY: Double-check that {block_param} parameter exists before returning
+
+EXCEPTION (only one):
+- If user's question explicitly mentions a different block height (e.g., "at block 5000000"), use that value instead
+- Otherwise, ALWAYS use {block_height}
+
+{example}
+
+⛔ BEFORE SUBMITTING YOUR QUERY:
+- Scan your query for the {block_param} parameter
+- If it's missing and CURRENT BLOCK HEIGHT is {block_height}, ADD IT NOW
+- Do not proceed without adding {block_param} parameter
     """
 
 def get_miner_self_tool_prompt(block_height: int = 0, node_type: str = "") -> str:

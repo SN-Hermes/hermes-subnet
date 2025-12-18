@@ -31,6 +31,7 @@ def create_thegraph_schema_info_content(schema_content: str) -> str:
 1. 📊 ENTITY QUERIES:
    - Single query: entityName(id: ID!,subgraphError: _SubgraphErrorPolicy_! = deny) → EntityType
    - Collection query: entityNames(skip: Int, first: Int, where: EntityFilter, orderBy: EntityOrderBy, orderDirection: OrderDirection, subgraphError: _SubgraphErrorPolicy_! = deny) → [EntityType]
+   - Multiple queries: You can send multiple independent queries in a single GraphQL request if they have no data dependencies between them
 
 2. 🔗 RELATIONSHIP QUERIES:
    - Direct field access: entity {{ field {{ id, otherFields }} }}
@@ -58,6 +59,15 @@ def create_thegraph_schema_info_content(schema_content: str) -> str:
    - name_not_in: [String!] - not match any value in list
    - name_not: String! - not equal to
    
+   BYTES FILTERS (Ethereum addresses, hashes, etc.):
+   - Direct field comparisons: name: "0x1234..." (full hex string with 0x prefix)
+   - name_not: Bytes! - not equal to
+   - name_gt, name_lt, name_gte, name_lte: Bytes! - byte-order comparison
+   - name_in: [Bytes!] - match any value in list
+   - name_not_in: [Bytes!] - not match any value in list
+   - name_contains: Bytes! - contains byte sequence (hex substring)
+   - name_not_contains: Bytes! - does not contain byte sequence
+   
    NUMBER FILTERS (Int, BigInt, BigDecimal):
    - Direct field comparisons: amount: "100"
    - amount_gt, amount_gte, amount_lt, amount_lte: String! - numeric comparisons (values as strings)
@@ -72,8 +82,8 @@ def create_thegraph_schema_info_content(schema_content: str) -> str:
    - active_not_in: [Boolean!] - not match any value in list
    
    NESTED FILTERS (AND/OR Logic):
-   - _and: [EntityFilter!] - all conditions must be true
-   - _or: [EntityFilter!] - at least one condition must be true
+   - and: [EntityFilter!] - all conditions must be true
+   - or: [EntityFilter!] - at least one condition must be true
    - Can be nested arbitrarily deep for complex logic
    
    EXAMPLES:
@@ -84,8 +94,8 @@ def create_thegraph_schema_info_content(schema_content: str) -> str:
    - {{ name_contains_nocase: "alice" }} - case-insensitive substring
    - {{ symbol_starts_with: "UNI" }} - prefix matching
    - {{ balance_gte: "1000000000000000000" }} - BigInt >= 1 ETH
-   - {{ _and: [{{ active: true }}, {{ balance_gt: "0" }}] }} - AND logic
-   - {{ _or: [{{ symbol: "ETH" }}, {{ symbol: "BTC" }}] }} - OR logic
+   - {{ and: [{{ active: true }}, {{ balance_gt: "0" }}] }} - AND logic
+   - {{ or: [{{ symbol: "ETH" }}, {{ symbol: "BTC" }}] }} - OR logic
 
 4. 📈 ORDER BY PATTERNS:
    - orderBy: field_name (camelCase field names)
@@ -145,8 +155,8 @@ def create_thegraph_schema_info_content(schema_content: str) -> str:
 ✅ {{ tokens(where: {{ symbol_in: ["ETH", "BTC"] }}) {{ id, symbol }} }}
 ✅ {{ tokens(where: {{ name_contains_nocase: "uniswap" }}) {{ id, name, symbol }} }}
 ✅ {{ users(where: {{ id_not_in: ["0x123", "0x456"] }}) {{ id, address }} }}
-✅ {{ pairs(where: {{ _and: [{{ token0: "0x123" }}, {{ reserve0_gt: "1000" }}] }}) {{ id, token0, token1 }} }}
-✅ {{ swaps(where: {{ _or: [{{ amount0_gt: "100" }}, {{ amount1_gt: "100" }}] }}) {{ id, amount0, amount1 }} }}
+✅ {{ pairs(where: {{ and: [{{ token0: "0x123" }}, {{ reserve0_gt: "1000" }}] }}) {{ id, token0, token1 }} }}
+✅ {{ swaps(where: {{ or: [{{ amount0_gt: "100" }}, {{ amount1_gt: "100" }}] }}) {{ id, amount0, amount1 }} }}
 ✅ {{ tokens(where: {{ symbol_starts_with_nocase: "uni" }}) {{ id, symbol, name }} }}
 ✅ {{ positions(where: {{ owner_not: "0x0000", liquidity_gt: "0" }}) {{ id, owner, liquidity }} }}
 
@@ -156,5 +166,7 @@ def create_thegraph_schema_info_content(schema_content: str) -> str:
 3. Use direct field access for relationships
 4. Apply The Graph-specific filtering and pagination
 5. Validate the query, then execute it
+6. AVOID DUPLICATE QUERIES: Do not generate queries that would retrieve the same data already obtained from previous queries in the same session
 
-DO NOT call graphql_schema_info again - everything needed is above."""
+DO NOT call graphql_schema_info again - everything needed is above.
+"""

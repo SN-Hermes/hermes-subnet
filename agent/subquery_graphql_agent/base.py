@@ -124,7 +124,8 @@ class GraphQLSource:
                 if response.status == 200:
                     return await response.json()
                 else:
-                    raise Exception(f"GraphQL query failed: {response.status}")
+                    error_text = await response.text()
+                    raise Exception(f"GraphQL query failed with status: {response.status}, response: {error_text}")
     
     def get_endpoint(self) -> str:
         """Get the GraphQL endpoint URL."""
@@ -233,7 +234,7 @@ class GraphQLAgent:
         self.llm = ChatOpenAI(
             model=model_name,
             temperature=0,
-            extra_body={"thinking": {"type": "disabled"}},
+            # extra_body={"thinking": {"type": "disabled"}},
         )
 
         # Create tools with node type information and authorization header

@@ -2,6 +2,7 @@ import json
 import os
 import signal
 import time
+from uuid import uuid4
 import httpx
 import aiohttp
 from loguru import logger
@@ -286,6 +287,7 @@ def form_training_data(question: str, block_height: int, response_messages: list
     })
 
     return {
+        "id": str(uuid4()),
         "messages": messages,
         "block_height": block_height,
     }
@@ -540,6 +542,7 @@ async def get_latest_block(endpoint: str, node_type: str) -> int | None:
         For SubQuery: returns lastProcessedHeight from _metadata
         For The Graph: returns block number from _meta
     """
+    headers = {"Content-Type": "application/json"}
     try:
         # Construct GraphQL query based on node type
         if node_type == "subql":
@@ -560,6 +563,10 @@ async def get_latest_block(endpoint: str, node_type: str) -> int | None:
               }
             }
             """
+            thegraph_token = os.getenv("THEGRAPH_API_TOKEN")
+            if thegraph_token:
+                headers["Authorization"] = f"Bearer {thegraph_token}"
+                logger.info("Added THEGRAPH_API_TOKEN to Authorization header to get latest block")
         else:
             logger.error(f"Unknown node_type: {node_type}")
             return None
@@ -569,8 +576,8 @@ async def get_latest_block(endpoint: str, node_type: str) -> int | None:
             async with session.post(
                 endpoint,
                 json={"query": query},
-                headers={"Content-Type": "application/json"},
-                timeout = aiohttp.ClientTimeout(total=30.0)
+                headers=headers,
+                timeout=aiohttp.ClientTimeout(total=10.0)
             ) as response:
                 if response.status != 200:
                     logger.error(f"Failed to get latest block from {endpoint}: HTTP {response.status}")
