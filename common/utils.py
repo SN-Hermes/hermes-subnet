@@ -155,20 +155,41 @@ IF RELATED to {domain_name} data:
 
 For missing user info (like "my rewards", "my tokens"), always ask for the specific wallet address or ID rather than fabricating data."""
 
-def select_uid(synthetic_score: dict, available_miners: list, uid_select_count: dict, max_count: int = 5) -> tuple[int | None, str | None]:
+def select_uid(
+        success_rate_threshold: float,
+        synthetic_score: dict,
+        synthetic_counter: dict,
+        available_miners:  list[int],
+        uid_select_count: dict,
+        max_count: int = 5
+    ) -> tuple[int | None, float | None]:
+
+    available_success_rate_miners = []
+    for uid in available_miners:
+        success_count, total_count = synthetic_counter.get(uid, (0, 0))
+        success_rate = success_count / total_count if total_count > 0 else 0
+        if success_rate >= success_rate_threshold:
+            available_success_rate_miners.append(uid)
+
+    if not available_success_rate_miners:
+        return None, None
+
     sorted_miners = sorted(
-        [(uid, synthetic_score[uid][0] if uid in synthetic_score else 0.0) for uid in available_miners],
+        [(uid, synthetic_score[uid][0] if uid in synthetic_score else 0.0) for uid in available_success_rate_miners],
         key=lambda x: x[1],
         reverse=True
     )
-    logger.info(f"synthetic_score: {synthetic_score}, available miners: {available_miners}, sorted miners: {sorted_miners}, uid_select_count: {uid_select_count}")
-    for uid, hotkey in sorted_miners:
+    logger.info(f"synthetic_score: {synthetic_score}, available_miners: {available_miners}, available_success_rate_miners: {available_success_rate_miners}, sorted miners: {sorted_miners}, uid_select_count: {uid_select_count}")
+    for uid, score in sorted_miners:
         if uid_select_count.get(uid, 0) < max_count:
             uid_select_count[uid] = uid_select_count.get(uid, 0) + 1
-            return uid, hotkey
+            return uid, score
     if sorted_miners:
-        uid_select_count[uid] = 1
-        return sorted_miners[0][0], sorted_miners[0][1]
+        selected_uid = sorted_miners[0][0]
+        selected_score = sorted_miners[0][1]
+        for uid, _ in sorted_miners:
+            uid_select_count[uid] = 1
+        return selected_uid, selected_score
 
     return None, None
 

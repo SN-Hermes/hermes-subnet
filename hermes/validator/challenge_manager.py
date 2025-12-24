@@ -40,9 +40,9 @@ class ChallengeManager:
     agent_manager: AgentManager
     scorer_manager: ScorerManager
     workload_manager: WorkloadManager
-    synthetic_score: list
+    ipc_synthetic_score: list
     ipc_miners_dict: dict
-    meta_config: dict
+    ipc_meta_config: dict
     event_stop: Event
     scores: torch.Tensor
     token_usage_metrics: TokenUsageMetrics
@@ -55,11 +55,11 @@ class ChallengeManager:
         uid: int, 
         dendrite: bt.Dendrite,
         organic_score_queue: list,
-        synthetic_score: list,
+        ipc_synthetic_score: list,
         ipc_miners_dict: dict,
         synthetic_model_name: str | None = None,
         score_model_name: str | None = None,
-        meta_config: dict = None,
+        ipc_meta_config: dict = None,
         ipc_common_config: dict = None,
         event_stop: Event = None,
         synthetic_token_usage: list = None,
@@ -80,7 +80,7 @@ class ChallengeManager:
         self.round_id = 1
         self.dendrite = dendrite
         self.token_usage_metrics = TokenUsageMetrics(datas=synthetic_token_usage)
-        self.benchmark = BenchMark(self.settings.wallet, meta_config)
+        self.benchmark = BenchMark(self.settings.wallet, ipc_meta_config)
 
         synthetic_model_name = synthetic_model_name or os.getenv("LLM_MODEL", "gpt-5")
         self.llm_synthetic = ChatOpenAI(
@@ -110,14 +110,14 @@ class ChallengeManager:
             organic_score_queue=organic_score_queue,
             work_state_path=work_state_path,
             token_usage_metrics=self.token_usage_metrics,
-            meta_config=meta_config or {},
+            ipc_meta_config=ipc_meta_config or {},
             benchmark=self.benchmark,
             v=v,
         )
 
-        self.synthetic_score = synthetic_score
+        self.ipc_synthetic_score = ipc_synthetic_score
         self.ipc_miners_dict = ipc_miners_dict
-        self.meta_config = meta_config
+        self.ipc_meta_config = ipc_meta_config
         self.event_stop = event_stop
         self.V = v
 
@@ -164,6 +164,7 @@ class ChallengeManager:
     async def challenge_loop(self):
         try:
             block_cache: dict[str, int] = {}
+            miners_counter: dict[int, tuple[int, int]] = {}  # uid -> [success_count, total_count]
             while not self.event_stop.is_set():
                 await asyncio.sleep(self.challenge_interval)
 
@@ -194,6 +195,7 @@ class ChallengeManager:
                     continue
 
                 project_score_matrix = []
+                organic_success_score_threshold = self.ipc_meta_config.get("organic_success_score_threshold", 5)
 
                 for cid_hash, project_config in projects.items():
                     allowed_cid_hashs_str = os.getenv("ALLOWED_PROJECT_CID_HASHS", "").strip()
@@ -291,10 +293,18 @@ class ChallengeManager:
                         challenge_id=challenge_id,
                         cid_hash=cid_hash,
                         token_usage_metrics=self.token_usage_metrics,
-                        min_latency_improvement_ratio=self.meta_config.get("min_latency_improvement_ratio", 0.2),
+                        min_latency_improvement_ratio=self.ipc_meta_config.get("min_latency_improvement_ratio", 0.2),
                         round_id=self.round_id
                     )
                     project_score_matrix.append(zip_scores)
+
+                    # update miners counter
+                    for uid, truth_score in zip(uids, ground_truth_scores):
+                        success_count, total_count = miners_counter.get(uid, (0, 0))
+                        if truth_score >= organic_success_score_threshold:
+                            success_count += 1
+                        total_count += 1
+                        miners_counter[uid] = (success_count, total_count)
 
                     table_formatter.create_synthetic_miners_response_table(
                         round_id=self.round_id,
@@ -357,7 +367,8 @@ class ChallengeManager:
                     workload_score,
                     challenge_id=challenge_id
                 )
-                self.synthetic_score[0] = self.scorer_manager.get_last_synthetic_scores()
+                self.ipc_synthetic_score[0] = self.scorer_manager.get_last_synthetic_scores()
+                self.ipc_synthetic_score[1] = miners_counter
 
                 table_formatter.create_synthetic_final_ranking_table(
                     round_id=self.round_id,

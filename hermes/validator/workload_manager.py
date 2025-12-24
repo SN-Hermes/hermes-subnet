@@ -95,14 +95,14 @@ class WorkloadManager:
         organic_score_queue: list,
         work_state_path: str | Path = None,
         token_usage_metrics: TokenUsageMetrics = None,
-        meta_config: dict = {},
+        ipc_meta_config: dict = {},
         benchmark: BenchMark = None,
         v: "Validator" = None,
     ):
         self.challenge_manager = challenge_manager
         self.organic_score_queue = organic_score_queue
         self.token_usage_metrics = token_usage_metrics
-        self.meta_config = meta_config
+        self.ipc_meta_config = ipc_meta_config
         self.benchmark = benchmark
         self.V = v
 
@@ -253,7 +253,7 @@ class WorkloadManager:
                             challenge_id=response.id,
                             cid_hash=response.cid_hash,
                             token_usage_metrics=self.token_usage_metrics,
-                            min_latency_improvement_ratio=self.meta_config.get("min_latency_improvement_ratio", 0.2),
+                            min_latency_improvement_ratio=self.ipc_meta_config.get("min_latency_improvement_ratio", 0.2),
                             round_id=f"Organic-{self.round_id}",
                         )
 

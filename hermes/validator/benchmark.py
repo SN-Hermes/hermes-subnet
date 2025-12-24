@@ -10,13 +10,13 @@ import time
 
 
 class BenchMark:
-    def __init__(self, wallet: bt.wallet, meta_config: dict[str, Any] = None):
+    def __init__(self, wallet: bt.wallet, ipc_meta_config: dict[str, Any] = None):
         self.wallet = wallet
         self.pending_uploads: dict[str, list[dict]] = {}
-        if meta_config is None:
-            self.meta_config = {}
+        if ipc_meta_config is None:
+            self.ipc_meta_config = {}
         else:
-            self.meta_config = meta_config
+            self.ipc_meta_config = ipc_meta_config
 
     async def upload(
         self,
@@ -42,10 +42,10 @@ class BenchMark:
         - 'sample': Upload randomly sampled data based on sample_rate, batched by cid_hash
         - 'all': Upload all data immediately
         """
-        benchmark_mode = self.meta_config.get("benchmark_mode", "sample")
-        benchmark_sample_rate = self.meta_config.get("benchmark_sample_rate", 0.5)
-        benchmark_batch_size = self.meta_config.get("benchmark_batch_size", 0)
-        benchmark_url = self.meta_config.get("benchmark_url") or os.environ.get('BOARD_SERVICE')
+        benchmark_mode = self.ipc_meta_config.get("benchmark_mode", "sample")
+        benchmark_sample_rate = self.ipc_meta_config.get("benchmark_sample_rate", 0.5)
+        benchmark_batch_size = self.ipc_meta_config.get("benchmark_batch_size", 0)
+        benchmark_url = self.ipc_meta_config.get("benchmark_url") or os.environ.get('BOARD_SERVICE')
 
         if not benchmark_url:
             logger.warning("[Benchmark] No benchmark URL configured, skipping upload")
@@ -156,7 +156,7 @@ class BenchMark:
             
             async with aiohttp.ClientSession() as session:
                 async with session.post(
-                    self.meta_config.get("benchmark_url") or f"{os.environ.get('BOARD_SERVICE')}/benchmark",
+                    self.ipc_meta_config.get("benchmark_url") or f"{os.environ.get('BOARD_SERVICE')}/benchmark",
                     json=payload,
                     timeout=aiohttp.ClientTimeout(total=30)
                 ) as resp:
