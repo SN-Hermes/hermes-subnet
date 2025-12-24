@@ -162,7 +162,7 @@ def select_uid(
         available_miners:  list[int],
         uid_select_count: dict,
         max_count: int = 5
-    ) -> tuple[int | None, str | None]:
+    ) -> tuple[int | None, float | None]:
 
     available_success_rate_miners = [
         uid for uid, (success_count, total_count) in synthetic_counter.items()
