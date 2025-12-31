@@ -106,4 +106,4 @@ class QuestionGenerator:
             self.project_question_history[cid_hash].clear()
 
 
-question_generator = QuestionGenerator(max_history=5)
+question_generator = QuestionGenerator(max_history=24)
