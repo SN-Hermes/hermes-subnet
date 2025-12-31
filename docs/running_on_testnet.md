@@ -6,7 +6,7 @@ If you have already prepared everything, running on testnet becomes much easier.
 
 ## Hermes Netuid on Testnet
 
-Hermes runs on netuid 280 in testnet.
+Hermes runs on netuid `280` in testnet.
 
 You can check it using the btcli command:
 
@@ -35,12 +35,13 @@ Note: Bittensor network addresses can be found in their official documentation: 
 
 ## Running
 
-Same as local run, you just need to change the endpoint address to testnet:
+Same as local run, you just need to change the endpoint address to testnet and netuid:
 
 ### .env.validator
 
 ```ini
 SUBTENSOR_NETWORK=wss://test.finney.opentensor.ai:443
+NETUID=280
 ```
 
 Keep other configurations unchanged, then run:
@@ -53,6 +54,7 @@ python -m neurons.validator
 
 ```ini
 SUBTENSOR_NETWORK=wss://test.finney.opentensor.ai:443
+NETUID=280
 ```
 
 Keep other configurations unchanged, then run:
