@@ -102,7 +102,7 @@ class Miner(BaseNeuron):
                 verify_fn=allow_all
             )
 
-            self.axon.serve(netuid=self.settings.netuid, subtensor=self.settings.subtensor)
+            # self.axon.serve(netuid=self.settings.netuid, subtensor=self.settings.subtensor)
 
             self.axon.start()
             logger.info(f"Miner starting at block: {self.settings.subtensor.block}")
