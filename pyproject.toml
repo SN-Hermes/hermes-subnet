@@ -6,7 +6,7 @@ readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
     "aiohttp>=3.12.15",
-    "bittensor>=9.9.0",
+    "bittensor==9.12.2",
     "dotenv>=0.9.9",
     "graphql-core>=3.2.6",
     "langchain>=0.3.27",
@@ -14,11 +14,33 @@ dependencies = [
     "langchain-openai>=0.3.31",
     "langgraph>=0.6.6",
     "loguru>=0.7.3",
+    "markupsafe>=3.0.2",
     "ollama>=0.5.3",
     "pyyaml>=6.0.2",
     "rich>=14.1.0",
     "torch>=2.8.0",
     "uuid>=1.30",
+    "starlette>=0.30.0",
+    "pydantic>=2",
+    "numpy>=2.1.0",
+]
+
+[tool.uv.sources]
+torch = { index = "pytorch" }
+markupsafe = { index = "pypi" }
+
+[[tool.uv.index]]
+name = "pypi"
+url = "https://pypi.org/simple"
+default = true
+
+[[tool.uv.index]]
+name = "pytorch"
+url = "https://download.pytorch.org/whl/cpu"
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8",
 ]
 
 [project.scripts]

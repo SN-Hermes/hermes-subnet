@@ -44,13 +44,16 @@ class Settings:
     def metagraph(self) -> Metagraph:
         if int(time.time()) - self._last_update_time > 60 * 10:
             try:
-                logger.info(f"Fetching new METAGRAPH for NETUID={self.netuid}")
-                meta = self.subtensor.metagraph(netuid=self.netuid)
-                self._last_metagraph = meta
+                logger.info(f"Syncing METAGRAPH for NETUID={self.netuid}")
+                if self._last_metagraph is None:
+                    # Create metagraph ONCE on first access
+                    self._last_metagraph = Metagraph(netuid=self.netuid, network=self.subtensor.network)
+                # Use sync() to update existing metagraph - avoids the memory leak!
+                self._last_metagraph.sync(subtensor=self.subtensor, lite=True)
                 self._last_update_time = int(time.time())
-                return meta
+                return self._last_metagraph
             except Exception as e:
-                logger.error(f"Failed to fetch new METAGRAPH for NETUID={self.NETUID}: {e}")
+                logger.error(f"Failed to sync METAGRAPH for NETUID={self.netuid}: {e}")
                 if self._last_metagraph is not None:
                     logger.warning("Falling back to the previous METAGRAPH.")
                     return self._last_metagraph

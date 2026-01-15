@@ -33,6 +33,11 @@ If you are familiar to bittensor subnet set up already, skip to [Optimize Miner 
 - Python environment with required dependencies
 - Bittensor wallet (coldkey and hotkey)
 - Public IP for running validator
+- OpenRouter or OpenAI API key for LLM access
+
+## Minimum Hardware Requirements
+- CPU: 4+ cores
+- RAM: 16GB+
 
 ### Python environment with required dependencies
 
@@ -106,55 +111,39 @@ cp .env.miner.example .env.miner
 Second, edit the file to apply your own settings:
 
 ```ini
-SUBTENSOR_NETWORK=finney
-WALLET_NAME=miner
+SUBTENSOR_NETWORK=your_subtensor_ws_rpc
+WALLET_NAME=validator
 HOTKEY=default
 
-# SN SubQuery Hermes NETUID
-NETUID=10
-
-# Your public IP address
-EXTERNAL_IP=1.37.27.39
+# Your public IP address and port
+EXTERNAL_IP=your_public_ip
 PORT=8086
 
-# Board service base URL
-BOARD_SERVICE=http://192.168.156.91:3000
-
+OPENAI_API_BASE=https://openrouter.ai/api/v1
 OPENAI_API_KEY=sk-xxx
 
-# Miner self-owned agent
-MINER_LLM_MODEL=gpt-4o-mini
-
 # For GraphQL agent & synthetic challenges
-LLM_MODEL=gpt-5
+LLM_MODEL=google/gemini-3-flash-preview
 
-# disable GraphQL agent
+# Miner self-owned agent
+MINER_LLM_MODEL=google/gemini-3-flash-preview
+
+# Enable only when you use a custom optimised LLM
 ENABLE_FALL_BACK_GRAPHQL_AGENT=false
-
-
 ```
 
 Configuration Parameters:
 
 * `WALLET_NAME`: The identifier of your previously created cold wallet.
-
 * `HOTKEY`: The identifier of your previously created hotkey wallet.
-
 * `EXTERNAL_IP`: Your public IP address,  it serves as the entry point for other neurons to communicate with.
-
 * `PORT`: Port corresponding to your `EXTERNAL_IP`.
-
-* `BOARD_SERVICE`: URL from which the validator pulls projects.
-
+* `SUBTENSOR_NETWORK`: WebSocket RPC endpoint of the Bittensor network you are connecting to.
+* `OPENAI_API_BASE`: (Optional) Base URL for the LLM API endpoint. Defaults to OpenAI's API if not specified.
 * `OPENAI_API_KEY`: API key for OpenAI (currently the only supported provider).
-
 * `LLM_MODEL`: LLM model used by the `Subql GraphQL Agent`. This model serves as a fallback when the miner agent cannot handle a query, ensuring that synthetic challenges and GraphQL-based requests are processed..
-
 * `MINER_LLM_MODEL`: LLM model used by the miner to analyze projects and serve query requests. Generally, the more powerful the model, the higher its factual accuracy.
-
 * `ENABLE_FALL_BACK_GRAPHQL_AGENT`: When none of the tools are matched, the request will be redirected to the `Subql GraphQL Agent`. Default is `False`.
-
-<br />
 
 Last,  launch the miner：
 

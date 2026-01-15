@@ -32,6 +32,12 @@ Validator performance directly affects rewards: well-performing validators earn 
 - Python environment with required dependencies
 - Bittensor wallet (coldkey and hotkey)
 - Public IP for running validator
+- OpenRouter or OpenAI API key for LLM access
+
+## Minimum Hardware Requirements
+- CPU: 4+ cores
+- RAM: 16GB+
+
 
 ### Python environment with required dependencies
 
@@ -95,8 +101,6 @@ If the registration is successful, you will receive a **UID**, which represents 
 
 A validator’s stake is a crucial metric for Extraction in Bittensor. To qualify as a valid validator, your wallet must hold a sufficient stake.
 
-<del> In `SN SubQuery Hermes`, at least **200 TAO** must be staked to register as a valid validator. </del>
-
 As an option, you may perform a **self-stake**:
 
 ```bash
@@ -120,45 +124,34 @@ cp .env.validator.example .env.validator
 Second, edit the file to apply your own settings:
 
 ```ini
-SUBTENSOR_NETWORK=finney
+SUBTENSOR_NETWORK=your_subtensor_ws_rpc
 WALLET_NAME=validator
 HOTKEY=default
 
-# SN SubQuery Hermes NETUID
-NETUID=10
-
-# Your public IP address
-EXTERNAL_IP=1.37.27.39
+# Your public IP address and port
+EXTERNAL_IP=your_public_ip
 PORT=8085
 
-# Board service base URL
-BOARD_SERVICE=http://192.168.156.91:3000
-
+OPENAI_API_BASE=https://openrouter.ai/api/v1
 OPENAI_API_KEY=sk-xxx
 
 # For GraphQL agent & synthetic challenges
-LLM_MODEL=gpt-5
+LLM_MODEL=google/gemini-3-flash-preview
 
 # For scoring miners
-SCORE_LLM_MODEL=o3
+SCORE_LLM_MODEL=z-ai/glm-4.7
 ```
 
 Configuration Parameters:
 
 * `WALLET_NAME`: The identifier of your previously created cold wallet.
-
 * `HOTKEY`: The identifier of your previously created hotkey wallet.
-
 * `EXTERNAL_IP`: Your public IP address,  it serves as the entry point for other neurons to communicate with.
-
 * `PORT`: Port corresponding to your `EXTERNAL_IP`.
-
-* `BOARD_SERVICE`: URL from which the validator pulls projects.
-
+* `SUBTENSOR_NETWORK`: WebSocket RPC endpoint of the Bittensor network you are connecting to.
+* `OPENAI_API_BASE`: (Optional) Base URL for the LLM API endpoint. Defaults to OpenAI's API if not specified.
 * `OPENAI_API_KEY`: API key for OpenAI (currently the only supported provider).
-
 * `LLM_MODEL`: LLM model used by the validator to generate synthetic challenges. GPT-5 or similar models are recommended.
-
 * `SCORE_LLM_MODEL`: LLM model used by the validator to score miners. It is recommended to use a model with reasoning capabilities, such as `o3`.
 
 <br />
