@@ -115,9 +115,9 @@ SUBTENSOR_NETWORK=your_subtensor_ws_rpc
 WALLET_NAME=validator
 HOTKEY=default
 
-# Your public IP address and ort
-EXTERNAL_IP=1.37.27.39
-PORT=8085
+# Your public IP address and port
+EXTERNAL_IP=your_public_ip
+PORT=8086
 
 OPENAI_API_BASE=https://openrouter.ai/api/v1
 OPENAI_API_KEY=sk-xxx
