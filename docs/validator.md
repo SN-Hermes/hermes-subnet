@@ -128,6 +128,9 @@ SUBTENSOR_NETWORK=your_subtensor_ws_rpc
 WALLET_NAME=validator
 HOTKEY=default
 
+# Synthetic challenge interval in seconds (default: 600 = 10 minutes)
+CHALLENGE_INTERVAL=1800
+
 # Your public IP address and port
 EXTERNAL_IP=your_public_ip
 PORT=8085
@@ -140,6 +143,10 @@ LLM_MODEL=google/gemini-3-flash-preview
 
 # For scoring miners
 SCORE_LLM_MODEL=z-ai/glm-4.7
+
+# The Graph API token for querying subgraph data, needed for TheGraph projects
+# free api token can be obtained from https://thegraph.com/docs/en/subgraphs/querying/managing-api-keys/
+THEGRAPH_API_TOKEN=xx
 ```
 
 Configuration Parameters:

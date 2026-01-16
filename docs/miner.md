@@ -128,6 +128,10 @@ LLM_MODEL=google/gemini-3-flash-preview
 # Miner self-owned agent
 MINER_LLM_MODEL=google/gemini-3-flash-preview
 
+# The Graph API token for querying subgraph data, needed for TheGraph projects
+# free api token can be obtained from https://thegraph.com/docs/en/subgraphs/querying/managing-api-keys/
+THEGRAPH_API_TOKEN=xx
+
 # Enable only when you use a custom optimised LLM
 ENABLE_FALL_BACK_GRAPHQL_AGENT=false
 ```
