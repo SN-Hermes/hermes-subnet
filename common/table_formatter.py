@@ -2,6 +2,7 @@ from rich.console import Console
 from rich.box import ROUNDED
 from rich.table import Table
 from loguru import logger
+import bittensor as bt
 from common.enums import ErrorCode
 from common.protocol import OrganicNonStreamSynapse
 
@@ -131,7 +132,7 @@ class TableFormatter:
         round_id: str,
         challenge_id: str,
         uids: list[int],
-        responses: list[any],
+        responses: list[bt.Synapse],
         ground_truth_scores: list[float],
         elapse_weights: list[float],
         zip_scores: list[float],
@@ -140,9 +141,19 @@ class TableFormatter:
     ):
         header = "🤖 Synthetic Challenge" + f" ({round_id} | {challenge_id})"
         rows = []
-        limited_uids = uids[:max_table_rows] if max_table_rows > 0 else uids
 
-        for idx, uid in enumerate(limited_uids):
+        # Separate successful and failed responses
+        successful_indices = []
+        failed_indices = []
+        for idx, r in enumerate(responses):
+            (successful_indices if r.is_success else failed_indices).append(idx)
+        
+        # Prioritize successful responses
+        prioritized_indices = successful_indices + failed_indices
+        limited_indices = prioritized_indices[:max_table_rows] if max_table_rows > 0 else prioritized_indices
+        
+        for idx in enumerate(limited_indices):
+            uid = uids[idx]
             r = responses[idx]
             rstr = None
             if r.is_success:
@@ -197,22 +208,29 @@ class TableFormatter:
     ):
         header = "🤖 Synthetic Challenge" + f" ({round_id} | {challenge_id})"
         rows = []
-        limited_uids = uids[:max_table_rows] if max_table_rows > 0 else uids
 
-        for idx, uid in enumerate(limited_uids):
+        data = list(zip(uids, hotkeys, workload_counts, quality_scores, workload_score))
+
+        # Sort by new_ema_scores[uid][0] in descending order
+        sorted_data = sorted(data, key=lambda x: new_ema_scores[x[0]][0], reverse=True)
+        
+        # Limit to max_table_rows if specified
+        limited_data = sorted_data[:max_table_rows] if max_table_rows > 0 else sorted_data
+
+        for uid, hotkey, workload_count, quality_score, workload_s in limited_data:
             rows.append([
                 f"{uid}",
-                f"{hotkeys[idx]}",
-                f"{workload_counts[idx]}",
-                f"{', '.join(map(str, quality_scores[idx]))}",
-                f"{workload_score[idx]}",
+                f"{hotkey}",
+                f"{workload_count}",
+                f"{', '.join(map(str, quality_score))}",
+                f"{workload_s}",
                 f"{new_ema_scores[uid][0]}"
             ])
 
         caption = f""
         if max_table_rows > 0 and len(uids) > max_table_rows:
-            caption += f" (showing first {max_table_rows} of {len(uids)} miners)"
-    
+            caption += f" (showing top {max_table_rows} of {len(uids)} miners by EMA score)"
+
         miners_response_output = table_formatter.create_multiple_column_table(
             title=f"{header} - Miners Final Score",
             caption=caption,

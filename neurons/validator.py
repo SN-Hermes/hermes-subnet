@@ -204,6 +204,7 @@ class Validator(BaseNeuron):
                 logger.debug(f"[CheckMiner] all_miner_uids: {all_miner_uids}, Current miners: {ipc_miners_dict}")
 
                 tasks = []
+                logger.debug(f"all_miner_uids: {all_miner_uids}")
                 for uid in all_miner_uids:
                     tasks.append(
                         asyncio.create_task(
@@ -226,7 +227,7 @@ class Validator(BaseNeuron):
                 logger.error(f"Error in miner checking: {e}")
 
             try:
-                await asyncio.sleep(30)
+                await asyncio.sleep(60)
             except asyncio.CancelledError:
                 logger.info("[CheckMiner] Shutting down gracefully...")
                 break

@@ -86,7 +86,7 @@ class ScorerManager:
         workload_score: List[float] | None,
         challenge_id: str = ""
     ):
-        logger.info(f"[ScorerManager] - {challenge_id} update_scores called with uids: {uids}, hotkeys: {hotkeys}, project_score_matrix: {project_score_matrix}, workload_score: {workload_score}")
+        logger.debug(f"[ScorerManager] - {challenge_id} update_scores called with uids: {uids}, hotkeys: {hotkeys}, project_score_matrix: {project_score_matrix}, workload_score: {workload_score}")
         if not uids or not project_score_matrix:
             return
 
@@ -103,7 +103,7 @@ class ScorerManager:
         
         new_scores = self.overall_ema.update(uids, hotkeys, score_matrix.tolist())
         self.save_state(new_scores)
-        logger.info(f"[ScorerManager] - {challenge_id} uids: {uids}, project_score_matrix: {project_score_matrix}, workload_score: {workload_score}, merged: {merged}, score_matrix: {score_matrix.tolist()}, updated_ema_scores: {new_scores}")
+        logger.debug(f"[ScorerManager] - {challenge_id} uids: {uids}, project_score_matrix: {project_score_matrix}, workload_score: {workload_score}, merged: {merged}, score_matrix: {score_matrix.tolist()}, updated_ema_scores: {new_scores}")
         return new_scores
 
 

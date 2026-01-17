@@ -200,7 +200,7 @@ class WorkloadManager:
 
             scores[idx] = utils.fix_float(min(0.5 * quality_ema + 0.5 * normalized_workload, 5))
 
-        logger.info(f"[WorkloadManager] - {challenge_id} workload_counts: {workload_counts}, quality_scores: {log_quality_scores}, compute_workload_score: {scores}")
+        logger.debug(f"[WorkloadManager] - {challenge_id} workload_counts: {workload_counts}, quality_scores: {log_quality_scores}, compute_workload_score: {scores}")
         return scores, workload_counts, log_quality_scores
 
     async def compute_organic_task(self):

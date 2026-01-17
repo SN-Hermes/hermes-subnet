@@ -597,6 +597,7 @@ class ChallengeManager:
 
         try:
             if not hotkey:
+                r.dendrite = bt.TerminalInfo(status_code=200)
                 r.status_code = ErrorCode.NOT_HEALTHY.value
                 r.error = "Miner is not healthy"
             else:
