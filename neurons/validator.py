@@ -182,8 +182,16 @@ class Validator(BaseNeuron):
                         "projects": r.response.get("capacity", {}).get("projects", []),
                         "hotkey": r.axon.hotkey
                     }
-            except Exception:
-                return None
+                else:
+                    logger.debug(f"UID {uid} request failed.")
+            except Exception as e:
+                logger.debug(f"Failed to check availability for uid {uid}: {e}")
+
+            return {
+                "uid": uid,
+                "projects": [],
+                "hotkey": ""
+            }
 
         while not event_stop.is_set():
             try:
@@ -208,8 +216,6 @@ class Validator(BaseNeuron):
                     )
                 responses: list[any] = await asyncio.gather(*tasks)
 
-                # Filter out None responses
-                responses = [res for res in responses if res is not None]
                 for r in responses:
                     ipc_miners_dict[r["uid"]] = {
                         "hotkey": r["hotkey"],
@@ -517,7 +523,7 @@ async def main():
             while not event_stop.is_set():
                 try:
                     new_meta = await meta.pull()
-                    logger.info(f"Pulled new meta config: {new_meta}")
+                    logger.debug(f"Pulled new meta config: {new_meta}")
                     if new_meta.data:
                         new_min_latency_improvement_ratio = new_meta.data.get("min_latency_improvement_ratio", 0.2)
                         new_benchmark_mode = new_meta.data.get("benchmark_mode", "sample")

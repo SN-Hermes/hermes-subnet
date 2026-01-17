@@ -27,8 +27,7 @@ class MetaConfig:
         async with aiohttp.ClientSession() as session:
             async with session.get(f"{board_url}/config/meta", headers=headers) as resp:
                 response_data = await resp.json()
-
-                logger.info(f"Meta config response: {response_data}")
+                logger.debug(f"Meta config response: {response_data}")
         
         parsed = MetaConfigResponse(**response_data)
         return parsed

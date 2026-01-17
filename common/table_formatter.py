@@ -136,10 +136,13 @@ class TableFormatter:
         elapse_weights: list[float],
         zip_scores: list[float],
         cid: str,
+        max_table_rows: int
     ):
         header = "🤖 Synthetic Challenge" + f" ({round_id} | {challenge_id})"
         rows = []
-        for idx, uid in enumerate(uids):
+        limited_uids = uids[:max_table_rows] if max_table_rows > 0 else uids
+
+        for idx, uid in enumerate(limited_uids):
             r = responses[idx]
             rstr = None
             if r.is_success:
@@ -159,9 +162,14 @@ class TableFormatter:
                 f"{elapse_weights[idx]}",
                 f"{zip_scores[idx]}",
             ])
+
+        caption = f"cid: {cid}"
+        if max_table_rows > 0 and len(uids) > max_table_rows:
+            caption += f" (showing first {max_table_rows} of {len(uids)} miners)"
+    
         miners_response_output = self.create_multiple_column_table(
             title=f"{header} - Miners Response",
-            caption=f"cid: {cid}",
+            caption=caption,
             columns=[
                 "UID",
                 "Response",
@@ -183,11 +191,15 @@ class TableFormatter:
         workload_counts: list[int],
         quality_scores: list[list[float]],
         workload_score: list[float],
-        new_ema_scores: dict[int, tuple[float, str]]
+        new_ema_scores: dict[int, tuple[float, str]],
+        max_table_rows: int
+
     ):
         header = "🤖 Synthetic Challenge" + f" ({round_id} | {challenge_id})"
         rows = []
-        for idx, uid in enumerate(uids):
+        limited_uids = uids[:max_table_rows] if max_table_rows > 0 else uids
+
+        for idx, uid in enumerate(limited_uids):
             rows.append([
                 f"{uid}",
                 f"{hotkeys[idx]}",
@@ -196,8 +208,14 @@ class TableFormatter:
                 f"{workload_score[idx]}",
                 f"{new_ema_scores[uid][0]}"
             ])
+
+        caption = f""
+        if max_table_rows > 0 and len(uids) > max_table_rows:
+            caption += f" (showing first {max_table_rows} of {len(uids)} miners)"
+    
         miners_response_output = table_formatter.create_multiple_column_table(
             title=f"{header} - Miners Final Score",
+            caption=caption,
             columns=[
                 "UID",
                 "Hotkey",

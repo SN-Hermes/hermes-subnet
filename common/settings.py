@@ -8,6 +8,7 @@ from loguru import logger
 import dotenv
 import bittensor as bt
 from common import utils
+from common.enums import RoleFlag
 
 
 class Settings:
@@ -108,15 +109,21 @@ class Settings:
 
     def miners(self) -> Tuple[List[int], List[str]]:
         uids = []
-        meta = self.metagraph
+        meta: bt.Metagraph = self.metagraph
         logger.debug(f"METAGRAPH UIDs: {meta.uids}")
+
+        # miners = ( placeholder1 is miner or (placeholder is not validator && uid != 0 ) )
         for uid in meta.uids:
+            a = meta.axons[uid]
+            if a.placeholder1 == RoleFlag.MINER.value:
+                uids.append(int(uid))
+            elif a.placeholder1 != RoleFlag.VALIDATOR.value and int(uid) != 0:
+                 uids.append(int(uid))
             logger.debug(f"UID: {uid}, is_serving: {meta.axons[uid].is_serving}, permit: {meta.validator_permit[uid]}, stake: {meta.S[uid]}")
-            if not meta.axons[uid].is_serving:
-              continue
+            # if not meta.axons[uid].is_serving:
+            #   continue
             # if meta.validator_permit[uid] and meta.S[uid] > 1024:
             #     continue
-            uids.append(int(uid))
         hotkeys = [meta.hotkeys[u] for u in uids]
         return uids, hotkeys
 

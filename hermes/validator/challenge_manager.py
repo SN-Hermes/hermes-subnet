@@ -299,11 +299,12 @@ class ChallengeManager:
                     responses = await asyncio.gather(
                         *(self.query_miner(
                             uid=uid,
+                            hotkey=hotkey,
                             cid_hash=cid_hash,
                             challenge_id=challenge_id,
                             question=question,
                             block_height=block_cache[cid_hash]
-                        ) for uid in uids)
+                        ) for uid, hotkey in zip(uids, hotkeys))
                     )
 
                     # score result
@@ -335,7 +336,8 @@ class ChallengeManager:
                         ground_truth_scores=ground_truth_scores,
                         elapse_weights=elapse_weights,
                         zip_scores=zip_scores,
-                        cid=cid_hash
+                        cid=cid_hash,
+                        max_table_rows=int(os.getenv("MAX_TABLE_ROWS", 20))
                     )
 
                     await self.benchmark.upload(
@@ -373,6 +375,7 @@ class ChallengeManager:
                                 "graphqlAgentInnerToolCalls": [json.loads(t) for t in resp.graphql_agent_inner_tool_calls] if resp.graphql_agent_inner_tool_calls else [],
                             }
                             for uid, hotkey, elapse_time, truth_score, resp in zip(uids, hotkeys, miners_elapse_time, ground_truth_scores, responses)
+                            if resp.status_code != ErrorCode.NOT_HEALTHY.value
                         ],
                     )
 
@@ -399,7 +402,8 @@ class ChallengeManager:
                     workload_counts=workload_counts,
                     quality_scores=log_quality_scores,
                     workload_score=workload_score,
-                    new_ema_scores=new_ema_scores
+                    new_ema_scores=new_ema_scores,
+                    max_table_rows=int(os.getenv("MAX_TABLE_ROWS", 20))
                 )
                 self.round_id += 1
 
@@ -577,6 +581,7 @@ class ChallengeManager:
     async def query_miner(
         self,
         uid: int,
+        hotkey: str,
         cid_hash: str,
         challenge_id: str,
         question: str,
@@ -591,13 +596,17 @@ class ChallengeManager:
         r.error = "Unknown error"
 
         try:
-            r: SyntheticNonStreamSynapse = await self.dendrite.forward(
-                axons=self.settings.metagraph.axons[uid],
-                synapse=synapse,
-                deserialize=False,
-                timeout=self.forward_miner_timeout,
-            )
-            logger.debug(f"🔍 [ChallengeManager] - {challenge_id} MINER RESPONSE [UID: {uid}] - ✅ is_success: {r.is_success} - {r.dendrite.status_code} - {r.dendrite.status_message}")
+            if not hotkey:
+                r.status_code = ErrorCode.NOT_HEALTHY.value
+                r.error = "Miner is not healthy"
+            else:
+                r: SyntheticNonStreamSynapse = await self.dendrite.forward(
+                    axons=self.settings.metagraph.axons[uid],
+                    synapse=synapse,
+                    deserialize=False,
+                    timeout=self.forward_miner_timeout,
+                )
+                logger.debug(f"🔍 [ChallengeManager] - {challenge_id} MINER RESPONSE [UID: {uid}] - ✅ is_success: {r.is_success} - {r.dendrite.status_code} - {r.dendrite.status_message}")
         except KeyboardInterrupt:
             logger.info(f"[ChallengeManager] - {challenge_id} Miner query interrupted by user [UID: {uid}]")
             raise  # Re-raise to allow graceful shutdown
@@ -640,27 +649,31 @@ class ChallengeManager:
 
     def _get_epoch_info(self) -> Optional[EpochInfo]:
         try:
-            current_block = self.settings.subtensor.get_current_block()
+            meta_info: bt.MetagraphInfo = self.settings.subtensor.get_metagraph_info(
+                netuid=self.settings.netuid,
+                field_indices=[
+                    bt.SelectiveMetagraphIndex.Block,
+                    bt.SelectiveMetagraphIndex.Tempo,
+                    bt.SelectiveMetagraphIndex.BlocksSinceLastStep,
+                ]
+            )
         except Exception as e:
-            logger.warning(f"[ChallengeManager] Unable to fetch current block: {e}")
+            logger.warning(f"[ChallengeManager] Unable to get epoch info: {e}")
             return None
 
-        if current_block is None:
+        if meta_info is None:
+            logger.warning("[ChallengeManager] Meta info is unavailable.")
+            return None
+
+        current_block = meta_info.block
+        tempo = meta_info.tempo
+        blocks_since_last_step = meta_info.blocks_since_last_step
+
+        if not current_block:
             current_block = getattr(self.settings.subtensor, "block", None)
 
-        if current_block is None:
+        if not current_block:
             logger.warning("[ChallengeManager] Current block is unavailable.")
-            return None
-
-        try:
-            tempo = self.settings.subtensor.tempo(netuid=self.settings.netuid, block=current_block)
-            blocks_since_last_step = self.settings.subtensor.blocks_since_last_step(netuid=self.settings.netuid, block=current_block)
-        except Exception as e:
-            logger.warning(f"[ChallengeManager] Failed to read tempo/blocks_since_last_step: {e}")
-            return None
-
-        if tempo is None or tempo <= 0 or blocks_since_last_step is None:
-            logger.debug("[ChallengeManager] Tempo or block cadence unavailable, skipping epoch guard.")
             return None
 
         epoch_start_block = current_block - blocks_since_last_step
@@ -712,9 +725,9 @@ class ChallengeManager:
         logger.info(f"[ChallengeManager] set_weights for uids: {uids}, scores: {scores}")
         scores_np = np.array(scores, dtype=np.float32)
 
-        if np.all(scores_np == 0):
-            logger.warning("[ChallengeManager] All scores are zero, skipping set weight.")
-            return
+        # if np.all(scores_np == 0):
+        #     logger.warning("[ChallengeManager] All scores are zero, skipping set weight.")
+        #     return
         (
             processed_weight_uids,
             processed_weights,

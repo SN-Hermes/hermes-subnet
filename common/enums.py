@@ -24,6 +24,7 @@ class ErrorCode(Enum):
 
     ## ============ miner side error ============
     AGENT_NOT_FOUND = 2001
+    NOT_HEALTHY = 2002
 
     ## ============ validator side error ============
     FORWARD_SYNTHETIC_FAILED = 3001
