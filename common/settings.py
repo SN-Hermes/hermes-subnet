@@ -32,14 +32,12 @@ class Settings:
     def subtensor(self) -> Subtensor:
         if self._subtensor is not None:
             return self._subtensor
-        subtensor_network = os.environ.get("SUBTENSOR_NETWORK", "local")
-        if subtensor_network.lower() == "local":
-            subtensor_network = os.environ.get("SUBTENSOR_CHAIN_ENDPOINT")
-        else:
-            subtensor_network = subtensor_network.lower()
+        subtensor_network = os.environ.get("SUBTENSOR_NETWORK")
         logger.info(f"Instantiating subtensor with network: {subtensor_network}")
+        if not subtensor_network:
+            raise ValueError("SUBTENSOR_NETWORK environment variable is not set.")
+        
         self._subtensor = Subtensor(network=subtensor_network)
-        return self._subtensor
     
     @property
     def metagraph(self) -> Metagraph:
@@ -48,9 +46,9 @@ class Settings:
                 logger.info(f"Syncing METAGRAPH for NETUID={self.netuid}")
                 if self._last_metagraph is None:
                     # Create metagraph ONCE on first access
-                    self._last_metagraph = Metagraph(netuid=self.netuid, network=self.subtensor.network)
+                    self._last_metagraph = Metagraph(netuid=self.netuid, subtensor=self.subtensor)
                 # Use sync() to update existing metagraph - avoids the memory leak!
-                self._last_metagraph.sync(subtensor=self.subtensor, lite=True)
+                self._last_metagraph.sync(lite=True)
                 self._last_update_time = int(time.time())
                 return self._last_metagraph
             except Exception as e:
