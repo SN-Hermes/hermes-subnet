@@ -38,7 +38,8 @@ class Settings:
             raise ValueError("SUBTENSOR_NETWORK environment variable is not set.")
         
         self._subtensor = Subtensor(network=subtensor_network)
-    
+        return self._subtensor
+
     @property
     def metagraph(self) -> Metagraph:
         if int(time.time()) - self._last_update_time > 60 * 10:
