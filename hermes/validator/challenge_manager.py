@@ -727,20 +727,23 @@ class ChallengeManager:
         logger.info(f"[ChallengeManager] set_weights for uids: {uids}, scores: {scores}")
         scores_np = np.array(scores, dtype=np.float32)
 
-        # if np.all(scores_np == 0):
-        #     logger.warning("[ChallengeManager] All scores are zero, skipping set weight.")
-        #     return
-        (
-            processed_weight_uids,
-            processed_weights,
-        ) = bt.utils.weight_utils.process_weights_for_netuid(
-                uids = np.array(uids, dtype=np.int64),
-                # weights = raw_weights.detach().cpu().numpy().astype(np.float32),
-                weights = scores_np,
-                netuid=self.settings.netuid,
-                subtensor=self.settings.subtensor,
-                metagraph=self.settings.metagraph,
-        )
+        if np.all(scores_np == 0):
+            logger.warning("[ChallengeManager] All scores are zero, submitting zero weights.")
+            processed_weight_uids = np.array(uids, dtype=np.int64)
+            processed_weights = np.zeros(len(uids), dtype=np.float32)
+        else:
+            (
+                processed_weight_uids,
+                processed_weights,
+            ) = bt.utils.weight_utils.process_weights_for_netuid(
+                    uids = np.array(uids, dtype=np.int64),
+                    # weights = raw_weights.detach().cpu().numpy().astype(np.float32),
+                    weights = scores_np,
+                    netuid=self.settings.netuid,
+                    subtensor=self.settings.subtensor,
+                    metagraph=self.settings.metagraph,
+            )
+        
         logger.info(f"processed_weight_uids: {processed_weight_uids}")
         logger.info(f"processed_weights: {processed_weights}")
 
