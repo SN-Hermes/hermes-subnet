@@ -296,17 +296,26 @@ class ChallengeManager:
                     if skip_query_miner:
                         continue
 
-                    # query all miner
+                    # query all miner with concurrency control
                     logger.info(f"[ChallengeManager] - {challenge_id} query miners: {uids}")
+                    
+                    # Use semaphore to limit concurrent requests
+                    max_concurrent_requests = int(os.getenv("MAX_CONCURRENT_MINER_REQUESTS", 20))
+                    semaphore = asyncio.Semaphore(max_concurrent_requests)
+                    
+                    async def query_with_semaphore(uid, hotkey):
+                        async with semaphore:
+                            return await self.query_miner(
+                                uid=uid,
+                                hotkey=hotkey,
+                                cid_hash=cid_hash,
+                                challenge_id=challenge_id,
+                                question=question,
+                                block_height=block_cache[cid_hash]
+                            )
+                    
                     responses = await asyncio.gather(
-                        *(self.query_miner(
-                            uid=uid,
-                            hotkey=hotkey,
-                            cid_hash=cid_hash,
-                            challenge_id=challenge_id,
-                            question=question,
-                            block_height=block_cache[cid_hash]
-                        ) for uid, hotkey in zip(uids, hotkeys))
+                        *(query_with_semaphore(uid, hotkey) for uid, hotkey in zip(uids, hotkeys))
                     )
                     logger.info(f"[ChallengeManager] - {challenge_id} query miners done")
 
