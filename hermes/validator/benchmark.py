@@ -5,8 +5,8 @@ import os
 import bittensor as bt
 from loguru import logger
 import hashlib
-import json
 import time
+import base64
 
 
 class BenchMark:
@@ -132,31 +132,35 @@ class BenchMark:
             
             payload_to_hash = {
                 "benchmarks": normalized_batch,
-                "timestamp": timestamp
+                "timestamp": timestamp,
             }
-            
-            # Use compact format without spaces to match TypeScript's stableStringify
-            data_json = json.dumps(payload_to_hash, sort_keys=True, separators=(',', ':'), ensure_ascii=False)
+            import msgpack
+            msgpack.packb(payload_to_hash)
 
-            # logger.info(f"[Benchmark] Data JSON for hashing: {data_json}")
-            data_hash = hashlib.sha256(data_json.encode()).hexdigest()
-            
+            b = msgpack.packb(
+                payload_to_hash,
+                use_bin_type=True,
+                strict_types=True
+            )
+            h = hashlib.sha256(b).hexdigest()
+
+            # Convert msgpack data to base64
+            b_base64 = base64.b64encode(b).decode('utf-8')
+
             # Step 2: Sign the hash with wallet
-            signature = f"0x{self.wallet.hotkey.sign(data_hash).hex()}"
+            signature = f"0x{self.wallet.hotkey.sign(h).hex()}"
             
             # Step 3: Send hash, signature, timestamp along with data
             payload = {
-                "benchmarks": normalized_batch,
-                "timestamp": timestamp,
-                "hash": data_hash,
+                "msgpack": b_base64,
+                "hash": h,
                 "validator": self.wallet.hotkey.ss58_address,
                 "signature": signature
             }
-            # logger.info(f"[Benchmark] Uploading payload: {payload}")
-            
+
             async with aiohttp.ClientSession() as session:
                 async with session.post(
-                    self.ipc_meta_config.get("benchmark_url") or f"{os.environ.get('BOARD_SERVICE')}/benchmark",
+                    self.ipc_meta_config.get("benchmark_url") or f"{os.environ.get('BOARD_SERVICE')}/benchmark/msgpack",
                     json=payload,
                     timeout=aiohttp.ClientTimeout(total=30)
                 ) as resp:
