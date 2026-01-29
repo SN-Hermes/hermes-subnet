@@ -29,6 +29,7 @@ from loguru import logger
 import uvicorn
 from multiprocessing.synchronize import Event
 from common.meta_config import MetaConfig
+from common.ops_protocol import OpsChatCompletionRequest
 from common.table_formatter import table_formatter
 from common.enums import ErrorCode, RoleFlag
 from common.logger import HermesLogger
@@ -128,6 +129,23 @@ class Validator(BaseNeuron):
         self.uid_select_count = defaultdict(int)
         self.ipc_common_config = ipc_common_config
         self.ipc_meta_config = ipc_meta_config
+
+        self.challenge_manager = ChallengeManager(
+            settings=self.settings,
+            save_project_dir=Path(__file__).parent.parent / "projects" / self.role,
+            uid=self.uid,
+            dendrite=self.dendrite,
+            organic_score_queue=organic_score_queue,
+            ipc_synthetic_score=ipc_synthetic_score,
+            ipc_miners_dict=ipc_miners_dict,
+            synthetic_token_usage=synthetic_token_usage,
+            ipc_meta_config=ipc_meta_config,
+            ipc_common_config=ipc_common_config,
+            event_stop=event_stop,
+            score_state_path=None,
+            work_state_path=None,
+            v=self,
+        )
 
         # { cid_hash: [block_height, last_acquired_timestamp, node_type, endpoint] }
         self.block_cache: dict[str, list[int, int, str, str]] = {}
@@ -382,6 +400,34 @@ class Validator(BaseNeuron):
             synapse.status_code = ErrorCode.ORGANIC_ERROR_RESPONSE.value
             synapse.error = str(e)
             return synapse
+
+
+    async def  ops_forward_miner(self, body: OpsChatCompletionRequest):
+        now = int(time.time())
+        cid_hash = body.cid_hash
+        uids = [body.target_uid]
+        hotkeys = ["xxxx"]
+        try:
+            # query all miner
+            logger.info(f"----receive ops_forward_miner: {body}")
+            responses = await asyncio.gather(
+                *(self.challenge_manager.query_miner(
+                    uid=uid,
+                    hotkey=hotkey,
+                    cid_hash=cid_hash,
+                    challenge_id=body.challenge_id,
+                    question=body.question,
+                    block_height=body.block_height or 41428719
+                ) for uid, hotkey in zip(uids, hotkeys))
+            )
+            logger.info(f"---- ops_forward_miner done----")
+        except KeyboardInterrupt:
+            logger.info("[ChallengeManager] Challenge loop interrupted by user")
+            raise  # Re-raise to allow graceful shutdown
+        except Exception as e:
+            logger.error(f"[ChallengeManager] Challenge loop error: {e}\n{traceback.format_exc()}")
+
+
 
 def run_challenge(
         organic_score_queue: list,

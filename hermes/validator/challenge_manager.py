@@ -307,6 +307,7 @@ class ChallengeManager:
                             block_height=block_cache[cid_hash]
                         ) for uid, hotkey in zip(uids, hotkeys))
                     )
+                    logger.info(f"[ChallengeManager] - {challenge_id} query miners done")
 
                     # score result
                     zip_scores, ground_truth_scores, elapse_weights, miners_elapse_time = await self.scorer_manager.compute_challenge_score(
@@ -603,12 +604,14 @@ class ChallengeManager:
                 r.status_code = ErrorCode.NOT_HEALTHY.value
                 r.error = "Miner is not healthy"
             else:
+                logger.info(f"uid: {uid}----------- to query miner")
                 r: SyntheticNonStreamSynapse = await self.dendrite.forward(
                     axons=self.settings.metagraph.axons[uid],
                     synapse=synapse,
                     deserialize=False,
                     timeout=self.forward_miner_timeout,
                 )
+                logger.info(f"uid: {uid}----------- query miner done")
                 logger.debug(f"🔍 [ChallengeManager] - {challenge_id} MINER RESPONSE [UID: {uid}] - ✅ is_success: {r.is_success} - {r.dendrite.status_code} - {r.dendrite.status_message}")
         except KeyboardInterrupt:
             logger.info(f"[ChallengeManager] - {challenge_id} Miner query interrupted by user [UID: {uid}]")
@@ -622,6 +625,7 @@ class ChallengeManager:
         finally:
             r.uid = uid
             r.elapsed_time = utils.fix_float(time.perf_counter() - start_time)
+            logger.info(f"uid: {uid}----------- query miners total time: {r.elapsed_time} seconds")
             return r
 
     async def set_weight(self):

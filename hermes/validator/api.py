@@ -3,6 +3,7 @@ import time
 from fastapi import APIRouter, Depends, FastAPI, HTTPException, Request
 import bittensor as bt
 from loguru import logger
+from common.ops_protocol import OpsChatCompletionRequest
 from common.protocol import ChatCompletionRequest
 import common.utils as utils
 from typing import TYPE_CHECKING
@@ -82,5 +83,11 @@ async def token_stats(request: Request, latest: str = "1h"):
 def health(request: Request):
     v: "Validator" = request.app.state.validator
     return {"status": "ok", "miners": [{"uid": uid, "projects": data.get("projects", [])} for uid, data in v.ipc_miners_dict.items()]}
+
+@app.post("/forward")
+async def forward(request: Request, body: OpsChatCompletionRequest):
+    v: "Validator" = request.app.state.validator
+    return await v.ops_forward_miner(body)
+
 
 app.include_router(router, prefix="/v1")

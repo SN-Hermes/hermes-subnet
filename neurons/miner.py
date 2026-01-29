@@ -226,6 +226,7 @@ class Miner(BaseNeuron):
                 error = f"No agent found for project {cid_hash}"
                 status_code = ErrorCode.AGENT_NOT_FOUND
             else:
+                log.info(f"[{tag}] - {task.id} Invoking agent for project {cid_hash} ...")
                 r = await graph.ainvoke({"messages": messages, "block_height": task.block_height})
                 (
                     answer,
@@ -236,6 +237,7 @@ class Miner(BaseNeuron):
                     error,
                     status_code
                 ) = self.get_answer(phase, task, r)
+                log.info(f"[{tag}] - {task.id} Invoking done for project {cid_hash}")
 
         except Exception as e:
             log.error(f"handle task error {task.id} - {question}. {e}\n")
@@ -244,6 +246,8 @@ class Miner(BaseNeuron):
 
         elapsed = utils.fix_float(time.perf_counter() - before)
         
+        log.info(f"[{tag}] - {task.id} elpased: {elapsed}s")
+
         self.print_table(
             answer=answer,
             usage_info=usage_info,
@@ -257,6 +261,8 @@ class Miner(BaseNeuron):
             elapsed=elapsed,
             log=log,
         )
+        log.info(f"[{tag}] - {task.id} printed table")
+
 
         task.response = response
         task.error = error
@@ -276,6 +282,7 @@ class Miner(BaseNeuron):
             elapsed=elapsed,
             task=task,
         )
+        log.info(f"[{tag}] - {task.id} putted db")
         return task
 
     def get_answer(
@@ -379,7 +386,9 @@ class Miner(BaseNeuron):
 
     async def forward_synthetic_non_stream(self, task: SyntheticNonStreamSynapse) -> SyntheticNonStreamSynapse:
         log = logger.bind(source=task.dendrite.hotkey)
+        log.info(f"--------received synthetic non-stream task: {task.id}")
         await self._handle_task(task, log)
+        log.info(f"--------processed synthetic non-stream task: {task.id}")
         return task
 
     async def forward_organic_stream(self, synapse: OrganicStreamSynapse) -> StreamingSynapse.BTStreamingResponse:
