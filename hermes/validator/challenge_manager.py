@@ -185,10 +185,11 @@ class ChallengeManager:
 
     async def challenge_loop(self):
         try:
+            challenge_interval = 40
             block_cache: dict[str, int] = {}
             miners_counter: dict[int, tuple[int, int]] = {}  # uid -> [success_count, total_count]
             while not self.event_stop.is_set():
-                await asyncio.sleep(self.challenge_interval)
+                await asyncio.sleep(challenge_interval)
 
                 projects = self.agent_manager.get_projects()
                 if not projects:
@@ -409,6 +410,9 @@ class ChallengeManager:
                     max_table_rows=int(os.getenv("MAX_TABLE_ROWS", 256))
                 )
                 self.round_id += 1
+
+                if self.round_id >= 2:
+                    challenge_interval = self.challenge_interval
 
         except KeyboardInterrupt:
             logger.info("[ChallengeManager] Challenge loop interrupted by user")
