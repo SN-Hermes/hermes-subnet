@@ -44,3 +44,5 @@ class RoleFlag(Enum):
     MINER = 1
     VALIDATOR = 2
 
+class FailureType(Enum):
+    GENERATE_CHALLENGE = 1

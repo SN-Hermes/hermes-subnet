@@ -40,9 +40,9 @@ class QuestionGenerator:
             llm: ChatOpenAI,
             token_usage_metrics: TokenUsageMetrics | None = None,
             round_id: int = 0
-        ) -> str:
+        ) -> tuple[str, str | None]:
         if not entity_schema:
-            return ""
+            return "", None
         if cid_hash not in self.project_question_history:
             self.project_question_history[cid_hash] = deque(maxlen=self.max_history)
         
@@ -64,10 +64,10 @@ class QuestionGenerator:
 
         except Exception as e:
             logger.error(f"Error generating question for project {cid_hash}: {e}")
-            return ""
+            return "", f"{e}"
 
         self.add_to_history(cid_hash, question)
-        return question
+        return question, None
 
     async def generate_question_with_agent(self, project_cid: str, entity_schema: str, server_agent: GraphQLAgent) -> str:
         if project_cid not in self.project_question_history:

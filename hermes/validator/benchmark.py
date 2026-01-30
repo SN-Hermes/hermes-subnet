@@ -13,10 +13,63 @@ class BenchMark:
     def __init__(self, wallet: bt.wallet, ipc_meta_config: dict[str, Any] = None):
         self.wallet = wallet
         self.pending_uploads: dict[str, list[dict]] = {}
+        self.failure_uploads: dict[int, int] = {}  # round_id -> failure count
+        
         if ipc_meta_config is None:
             self.ipc_meta_config = {}
         else:
             self.ipc_meta_config = ipc_meta_config
+        
+
+    async def add_failure(
+            self,
+            uid: int,
+            round_id: int,
+            address: str,
+            version: str,
+            failure_type: int,
+            cid_hash: str,
+            error_msgs: list[str]
+    ):
+        self.failure_uploads[round_id] = self.failure_uploads.get(round_id, 0) + 1
+
+        failure_data = {
+            "uid": uid,
+            "round_id": round_id,
+            "address": address,
+            "version": version,
+            "failure_type": failure_type,
+            "cid_hash": cid_hash,
+            "error_msgs": error_msgs,
+            "timestamp": int(time.time())
+        }
+        
+        if self.failure_uploads[round_id] >= 3:
+            await self._send_to_server("failure", [failure_data])
+            del self.failure_uploads[round_id]
+
+        keys_to_delete = [k for k in self.failure_uploads.keys() if k < round_id]
+        for k in keys_to_delete:
+            del self.failure_uploads[k]
+
+
+    async def upload_ema(
+            self,
+            uid: int,
+            address: str,
+            version: str,
+            round_id: int,
+            new_ema_scores: dict[str, tuple[float, str]],
+        ):
+        processed_scores = {k: list(v) for k, v in new_ema_scores.items()}
+        new_ema_scores_payload = {
+            "uid": uid,
+            "address": address,
+            "version": version,
+            "round_id": round_id,
+            "new_ema_scores": processed_scores,
+        }
+        await self._send_to_server("new_ema", [new_ema_scores_payload])
 
     async def upload(
         self,
@@ -100,8 +153,8 @@ class BenchMark:
 
         batch = self.pending_uploads[cid]
         self.pending_uploads[cid] = []
-        
-        await self._send_to_server(batch)
+        normalized_batch = self._normalize_numbers(batch)
+        await self._send_to_server("challenge", normalized_batch)
 
     def _normalize_numbers(self, obj):
         """
@@ -121,21 +174,18 @@ class BenchMark:
         else:
             return obj
 
-    async def _send_to_server(self, data_batch: list[dict]):
+    async def _send_to_server(self, typ: str, data_batch: list[dict]):
         """Send batch data to benchmark server"""
         try:
             # Step 1: Add timestamp and normalize data
             timestamp = int(time.time())
-            
-            # Normalize numbers to match TypeScript serialization
-            normalized_batch = self._normalize_numbers(data_batch)
-            
+
             payload_to_hash = {
-                "benchmarks": normalized_batch,
+                "data": data_batch,
                 "timestamp": timestamp,
             }
+
             import msgpack
-            msgpack.packb(payload_to_hash)
 
             b = msgpack.packb(
                 payload_to_hash,
@@ -153,6 +203,7 @@ class BenchMark:
             # Step 3: Send hash, signature, timestamp along with data
             payload = {
                 "msgpack": b_base64,
+                "typ": typ,
                 "hash": h,
                 "validator": self.wallet.hotkey.ss58_address,
                 "signature": signature
@@ -165,12 +216,10 @@ class BenchMark:
                     timeout=aiohttp.ClientTimeout(total=30)
                 ) as resp:
                     if resp.status == 200:
-                        logger.debug(f"[Benchmark] Successfully uploaded {len(data_batch)} benchmark(s)")
+                        logger.debug(f"[Benchmark] Successfully uploaded {typ} {len(data_batch)} benchmark(s)")
                     else:
                         error_text = await resp.text()
-                        logger.error(f"[Benchmark] Upload failed with status {resp.status}: {error_text}")
+                        logger.error(f"[Benchmark] Upload {typ} failed with status {resp.status}: {error_text}")
         except Exception as e:
-            logger.error(f"[Benchmark] Failed to upload benchmark data: {e}")
-
-
+            logger.error(f"[Benchmark] Failed to upload {typ} benchmark data: {e}")
 
