@@ -233,6 +233,8 @@ class ChallengeManager:
                     max_retries = int(os.getenv("CHALLENGE_GENERATION_MAX_RETRIES", 3))
                     challenge_generated = False
                     error_msgs = []
+                    weight_a = self.ipc_meta_config.get("weight_a", 60)
+                    weight_b = self.ipc_meta_config.get("weight_b", 40)
 
                     for attempt in range(max_retries):
                         challenge_id = str(uuid4())
@@ -240,11 +242,14 @@ class ChallengeManager:
                         # generate challenge
                         question, error = await question_generator.generate_question(
                             cid_hash, 
-                            project_config.schema_content, 
+                            project_config,
                             self.llm_synthetic,
                             self.token_usage_metrics,
-                            round_id=self.round_id
+                            round_id=self.round_id,
+                            weight_a=weight_a,    # normal
+                            weight_b=weight_b     # tool
                         )
+
                         if not question:
                             logger.warning(f"[ChallengeManager] - {cid_hash} Failed to generate question (attempt {attempt + 1}/{max_retries})")
                             error_msgs.append(f"(round: {self.round_id}, attempt: {attempt + 1}/{max_retries}, {cid_hash}) {error}")

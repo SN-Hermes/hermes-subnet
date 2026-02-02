@@ -1,15 +1,16 @@
-import os
 from typing import Dict
 from langchain_core.messages import HumanMessage
 from collections import deque
 import difflib
+from langgraph.prebuilt import create_react_agent
 
 from langchain_openai import ChatOpenAI
 from loguru import logger
 
 from agent.stats import Phase, TokenUsageMetrics
-from agent.subquery_graphql_agent.base import GraphQLAgent
-from common.prompt_template import SYNTHETIC_PROMPT, SYNTHETIC_PROMPT_SUBQL
+from agent.subquery_graphql_agent.base import ProjectConfig, create_graphql_toolkit
+from agent.subquery_graphql_agent.tools import GraphQLSchemaInfoTool
+from common.prompt_template import SYNTHETIC_PROMPT, SYNTHETIC_PROMPT_FALLBACK
 
 class QuestionGenerator:
     max_history: int
@@ -36,53 +37,79 @@ class QuestionGenerator:
     async def generate_question(
             self,
             cid_hash: str,
-            entity_schema: str,
+            project: ProjectConfig,
             llm: ChatOpenAI,
             token_usage_metrics: TokenUsageMetrics | None = None,
-            round_id: int = 0
+            round_id: int = 0,
+            weight_a: int = 60,
+            weight_b: int = 40,
         ) -> tuple[str, str | None]:
-        if not entity_schema:
-            return "", None
+        if not project.schema_content:
+            return "", "schema not found"
+
         if cid_hash not in self.project_question_history:
             self.project_question_history[cid_hash] = deque(maxlen=self.max_history)
-        
+
         recent_questions = self.format_history_constraint(self.project_question_history[cid_hash])
+
+        async def try_with_tools():
+            try:
+                toolkit = create_graphql_toolkit(
+                    project.endpoint,
+                    project.schema_content,
+                    node_type=project.node_type,
+                    manifest=None
+                )
+                tools = toolkit.get_tools()
+                schema_info_tool: GraphQLSchemaInfoTool = tools[0]
+                prompt = SYNTHETIC_PROMPT.format(
+                    entity_schema=project.schema_content,
+                    recent_questions=recent_questions,
+                    postgraphile_rules=schema_info_tool.postgraphile_rules,
+                    weight_a=weight_a,
+                    weight_b=weight_b
+                )
+                temp_executor = create_react_agent(
+                    model=llm,
+                    tools=tools,
+                    prompt="",
+                )
+                response = await temp_executor.ainvoke(
+                    { "messages": [{"role": "user", "content": prompt}] },
+                    config={
+                        "recursion_limit": 12,
+                    },
+                )
+                question = response.get('messages', [])[-1].content
+                if token_usage_metrics is not None:
+                    token_usage_metrics.append(cid_hash, phase=Phase.GENERATE_QUESTION, response=response, extra={"round_id": round_id})
+                return question, None
+
+            except Exception as e:
+                logger.error(f"Error occurred: {e}")
+                return "", f"{e}"
+
+        async def try_with_fallback():
+            try:
+                prompt = SYNTHETIC_PROMPT_FALLBACK.format(entity_schema=project.schema_content, recent_questions=recent_questions)
+                response = await llm.ainvoke([HumanMessage(content=prompt)])
+                question = response.content.strip()
+                if token_usage_metrics is not None:
+                    token_usage_metrics.append(cid_hash, phase=Phase.GENERATE_QUESTION, response=response, extra = {"round_id": round_id})
+                
+                return question, None
+            except Exception as e:
+                logger.error(f"Error generating fallback question for project {cid_hash}: {e}")
+                return "", f"{e}"
+
+        question, error = await try_with_tools()
+        if not question:
+            question, error = await try_with_fallback()
+
+        if not question:
+            self.add_to_history(cid_hash, question)
         
-        # Use environment variable to choose prompt template
-        demo_mode = os.getenv("DEMO_MODE", "false").lower() == "true"
-        if demo_mode:
-            prompt = SYNTHETIC_PROMPT_SUBQL.format(entity_schema=entity_schema, recent_questions=recent_questions)
-        else:
-            prompt = SYNTHETIC_PROMPT.format(entity_schema=entity_schema, recent_questions=recent_questions)
-        
-        try:
-            response = await llm.ainvoke([HumanMessage(content=prompt)])
-            question = response.content.strip()
-
-            if token_usage_metrics is not None:
-                token_usage_metrics.append(cid_hash, phase=Phase.GENERATE_QUESTION, response=response, extra = {"round_id": round_id})
-
-        except Exception as e:
-            logger.error(f"Error generating question for project {cid_hash}: {e}")
-            return "", f"{e}"
-
-        self.add_to_history(cid_hash, question)
-        return question, None
-
-    async def generate_question_with_agent(self, project_cid: str, entity_schema: str, server_agent: GraphQLAgent) -> str:
-        if project_cid not in self.project_question_history:
-            self.project_question_history[project_cid] = deque(maxlen=self.max_history)
-        
-        recent_questions = self.format_history_constraint(self.project_question_history[project_cid])
-        prompt = SYNTHETIC_PROMPT.format(entity_schema=entity_schema, recent_questions=recent_questions)
-
-
-        response = await server_agent.query_no_stream(prompt)
-        # logger.info(f"Agent response: {response}")
-
-        question =  response.get('messages', [])[-1].content
-        self.add_to_history(project_cid, question)
-        return question
+        return question, error
 
     def _is_similar(self, new_question: str) -> bool:
         new_clean = new_question.lower().strip()
@@ -95,6 +122,7 @@ class QuestionGenerator:
                 return True
         
         return False
+
     def add_to_history(self, cid_hash, question: str):
         if cid_hash not in self.project_question_history:
             self.project_question_history[cid_hash] = deque(maxlen=self.max_history)
