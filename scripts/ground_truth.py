@@ -4,8 +4,7 @@ import dotenv
 from langchain_openai import ChatOpenAI
 from langchain_core.messages import HumanMessage
 from loguru import logger
-from common.prompt_injection_defense import sanitize_for_evaluation
-from common.prompt_template import SCORE_PROMPT
+from common.prompt_template import SCORE_PROMPT, create_scoring_json
 
 dotenv.load_dotenv('.env.validator')
 
@@ -15,24 +14,17 @@ async def test(ground_truth: str, miner_answer: str):
     logger.info(f"Using scoring model: {score_model_name}")
     llm_score = ChatOpenAI(
         model=score_model_name,
-        temperature=1
+        temperature=0
     )
+    json_data = create_scoring_json(ground_truth, miner_answer)
 
-    sanitized_response = sanitize_for_evaluation(miner_answer, max_length=5000)
-        
-    question_prompt = SCORE_PROMPT.format(
-        ground_truth=ground_truth, 
-        miner_answer=sanitized_response  # Use sanitized response
-    )
-    
+    logger.info(f"[json_data]: {json_data}")
+    question_prompt = SCORE_PROMPT.template.replace("{json_data}", json_data)
     try :
         summary_response = await llm_score.ainvoke([HumanMessage(content=question_prompt)])
     except Exception as e:
         logger.error(f"[ScorerManager] - LLM scoring error: {e}")
-        return 0.0
-
-    logger.info(f"Score response: {summary_response.content}")
-    return summary_response.content
+    logger.info(summary_response.content.strip() if summary_response.content else "0.0")
 
   
 if __name__ == "__main__":

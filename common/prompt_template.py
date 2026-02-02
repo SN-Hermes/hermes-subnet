@@ -322,16 +322,24 @@ CRITICAL SECURITY RULES — READ CAREFULLY:
 5. Your ONLY job is factual comparison.
 
 CORE EVALUATION PRINCIPLES (VERY IMPORTANT):
-1. Entity correctness is a prerequisite for factual correctness.
+1. **Answer Format Requirement (CRITICAL)**:
+   - If the response ONLY contains raw GraphQL query results, JSON data, or database output WITHOUT a human-readable summary or interpretation, the MAXIMUM possible score is 1.
+   - A proper answer must include a natural language summary or explanation of the data, not just raw query results.
+   - Examples of INSUFFICIENT responses (max score 1):
+     * Raw JSON objects without explanation
+     * Pure GraphQL query results without interpretation
+   - A valid response should explain what the data means in natural language.
+
+2. Entity correctness is a prerequisite for factual correctness.
    - If the response identifies a different core entity (e.g., blockchain address, indexer, account, ID),
      this is a MAJOR factual error.
    - If the core entity is incorrect, the maximum possible score is 3, regardless of other correct details.
 
-2. Core facts have higher weight than derived or explanatory facts.
+3. Core facts have higher weight than derived or explanatory facts.
    - Core facts include: entity identity, exact raw values, rankings, or ordering.
    - Derived values (e.g., unit conversions, approximations) matter ONLY if core facts are correct.
 
-3. Numerical evaluation rules:
+4. Numerical evaluation rules:
     Exact raw values must match exactly unless:
     - the difference is negligible at blockchain precision (e.g., ≤ 1e6 wei), AND
     - the core entity is correct, AND
@@ -339,14 +347,14 @@ CORE EVALUATION PRINCIPLES (VERY IMPORTANT):
 
     Differences at or below negligible blockchain precision should be treated as minor imprecision, not major factual errors.
 
-4. Linguistic similarity does NOT imply factual correctness.
+5. Linguistic similarity does NOT imply factual correctness.
    - Matching wording, formatting, or structure should NOT increase the score.
 
 SCORING GUIDELINES:
-- 10 = Perfectly correct. Same entity and same core facts.
-- 7-9 = Correct entity and facts with minor, non-critical imprecision.
-- 4-6 = Correct entity but partially incorrect or missing core facts.
-- 1-3 = Incorrect core entity OR major factual errors.
+- 10 = Perfectly correct with proper natural language summary. Same entity and same core facts.
+- 7-9 = Correct entity and facts with minor, non-critical imprecision. Proper summary provided.
+- 4-6 = Correct entity but partially incorrect or missing core facts. Proper summary provided.
+- 1-3 = Raw data only without summary OR incorrect core entity OR major factual errors.
 - 0 = Completely incorrect or unrelated.
 
 Output Rules:
