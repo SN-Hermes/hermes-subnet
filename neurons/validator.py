@@ -89,29 +89,31 @@ class Validator(BaseNeuron):
     ):
         from hermes.validator.dendrite import HighConcurrencyDendrite
         dendrite = HighConcurrencyDendrite(wallet=self.settings.wallet)
-        
-        self.challenge_manager = ChallengeManager(
-            settings=self.settings,
-            save_project_dir=Path(__file__).parent.parent / "projects" / self.role,
-            uid=self.uid,
-            dendrite=dendrite,
-            organic_score_queue=organic_score_queue,
-            ipc_synthetic_score=ipc_synthetic_score,
-            ipc_miners_dict=ipc_miners_dict,
-            ipc_synthetic_token_usage=ipc_synthetic_token_usage,
-            ipc_meta_config=ipc_meta_config,
-            ipc_common_config=ipc_common_config,
-            event_stop=event_stop,
-            score_state_path=Path(self.settings.base_dir) / ".data" / f"{self.role}_score_state.pt",
-            work_state_path=Path(self.settings.base_dir) / ".data" / f"{self.role}_workload_state.pt",
-            v=self,
-        )
-        tasks = [
-            asyncio.create_task(
-                self.challenge_manager.start()
-            ),
-        ]
-        await asyncio.gather(*tasks)
+        try:
+            self.challenge_manager = ChallengeManager(
+                settings=self.settings,
+                save_project_dir=Path(__file__).parent.parent / "projects" / self.role,
+                uid=self.uid,
+                dendrite=dendrite,
+                organic_score_queue=organic_score_queue,
+                ipc_synthetic_score=ipc_synthetic_score,
+                ipc_miners_dict=ipc_miners_dict,
+                ipc_synthetic_token_usage=ipc_synthetic_token_usage,
+                ipc_meta_config=ipc_meta_config,
+                ipc_common_config=ipc_common_config,
+                event_stop=event_stop,
+                score_state_path=Path(self.settings.base_dir) / ".data" / f"{self.role}_score_state.pt",
+                work_state_path=Path(self.settings.base_dir) / ".data" / f"{self.role}_workload_state.pt",
+                v=self,
+            )
+            tasks = [
+                asyncio.create_task(
+                    self.challenge_manager.start()
+                ),
+            ]
+            await asyncio.gather(*tasks)
+        finally:
+            await dendrite.aclose_session()
 
     async def run_api(
             self,
