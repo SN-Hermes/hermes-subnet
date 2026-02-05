@@ -13,6 +13,16 @@ from langchain_core.messages import BaseMessage, AIMessage
 from datetime import datetime, timedelta
 
 
+def safe_json_loads(json_str: str):
+    if not json_str or not json_str.strip():
+        return None
+    try:
+        return json.loads(json_str)
+    except (json.JSONDecodeError, ValueError) as e:
+        logger.warning(f"Failed to parse JSON string: {json_str}... Error: {e}")
+        return None
+
+
 def try_get_external_ip() -> str | None:
     try:
         external_ip = requests.get("https://checkip.amazonaws.com").text.strip()
