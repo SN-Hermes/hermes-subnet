@@ -28,6 +28,7 @@ import common.utils as utils
 from hermes.validator.question_generator import question_generator
 from hermes.validator.scorer_manager import ScorerManager
 from hermes.validator.workload_manager import WorkloadManager
+from hermes.validator.dendrite import HighConcurrencyDendrite
 
 
 @dataclass
@@ -46,7 +47,7 @@ class ChallengeManager:
     uid: int
     round_id: int
     challenge_interval: int
-    dendrite: bt.Dendrite
+    dendrite: HighConcurrencyDendrite
     llm_synthetic: ChatOpenAI
     llm_score: ChatOpenAI
     agent_manager: AgentManager
@@ -65,7 +66,7 @@ class ChallengeManager:
         settings: Settings, 
         save_project_dir: str | Path, 
         uid: int, 
-        dendrite: bt.Dendrite,
+        dendrite: HighConcurrencyDendrite,
         organic_score_queue: list,
         ipc_synthetic_score: list,
         ipc_miners_dict: dict,
@@ -198,14 +199,15 @@ class ChallengeManager:
                     challenge_interval = 30
                     continue
 
-                # Sort miners by UID (from small to large)
-                sorted_miners = sorted(self.ipc_miners_dict.items(), key=lambda x: x[0])
+                # Randomly shuffle miners
+                miners_list = list(self.ipc_miners_dict.items())
+                random.shuffle(miners_list)
                 
                 uids = []
                 hotkeys = []
                 ips = []
                 seen_ips = {}  # ip -> first uid that used it
-                for uid, miner_info in sorted_miners:
+                for uid, miner_info in miners_list:
                     if uid != self.uid:
                         uids.append(uid)
                         hotkeys.append(miner_info["hotkey"])
@@ -321,24 +323,18 @@ class ChallengeManager:
                     # query all miner
                     logger.info(f"[ChallengeManager] - {challenge_id} query miners: {uids}")
 
-                    # Use semaphore to limit concurrent requests
-                    max_concurrent_requests = int(os.getenv("MAX_CONCURRENT_MINER_REQUESTS", 20))
-                    semaphore = asyncio.Semaphore(max_concurrent_requests)
-
-                    async def query_with_semaphore(uid, hotkey, ip):
-                        async with semaphore:
-                            return await self.query_miner(
-                                uid=uid,
-                                hotkey=hotkey,
-                                cid_hash=cid_hash,
-                                challenge_id=challenge_id,
-                                question=question,
-                                block_height=block_cache[cid_hash],
-                                is_ip_duplicated=bool(ip) and seen_ips.get(ip) != uid
-                            )
-                    
+                    # Query all miners concurrently (no semaphore limit, dendrite handles connection pooling)
                     responses = await asyncio.gather(
-                        *(query_with_semaphore(uid, hotkey, ip) for uid, hotkey, ip in zip(uids, hotkeys, ips))
+                        *(self.query_miner(
+                            uid=uid,
+                            hotkey=hotkey,
+                            cid_hash=cid_hash,
+                            challenge_id=challenge_id,
+                            question=question,
+                            block_height=block_cache[cid_hash],
+                            is_ip_duplicated=bool(ip) and seen_ips.get(ip) != uid
+                        ) for uid, hotkey, ip in zip(uids, hotkeys, ips)),
+                        return_exceptions=True  # Prevent single failure from breaking all requests
                     )
 
                     logger.info(f"[ChallengeManager] - {challenge_id} query miners done")
