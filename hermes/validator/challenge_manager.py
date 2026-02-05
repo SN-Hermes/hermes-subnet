@@ -541,7 +541,6 @@ class ChallengeManager:
         r.status_code = ErrorCode.FORWARD_SYNTHETIC_FAILED.value
         r.error = "Unknown error"
 
-        logger.info(f"----- sending query to uid: {uid}--")
         try:
             if not hotkey:
                 r.dendrite = bt.TerminalInfo(status_code=200)
@@ -571,8 +570,6 @@ class ChallengeManager:
         finally:
             r.uid = uid
             r.elapsed_time = utils.fix_float(time.perf_counter() - start_time)
-            logger.info(f"----- done query to uid: {uid}--{r.elapsed_time}")
-
             return r
 
     async def set_weight(self):
