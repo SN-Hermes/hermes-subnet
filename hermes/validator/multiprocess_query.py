@@ -175,7 +175,20 @@ def run_query_process_batch(
         return result
     except Exception as e:
         logger.error(f"[Process-{process_id}] Error: {e}")
-        return []
+
+        # Return error placeholder responses for all miners in this batch
+        error_responses = []
+        for uid, _, _, _ in miner_data_list:
+            r = SyntheticNonStreamSynapse(
+                id=challenge_id, uid=uid, cid_hash=cid_hash,
+                question=question, block_height=block_height
+            )
+            r.status_code = ErrorCode.PROCESS_ERROR.value
+            r.error = f"Process error: {e}"
+            r.elapsed_time = 0.0
+            error_responses.append(r)
+        return error_responses
+
     finally:
         # Ensure event loop is properly closed
         if loop is not None:

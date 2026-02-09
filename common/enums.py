@@ -34,6 +34,7 @@ class ErrorCode(Enum):
     ORGANIC_NO_SELECTED_MINER = 3003
     ORGANIC_NO_AXON = 3004
     ORGANIC_ERROR_RESPONSE = 3005
+    PROCESS_ERROR = 3006
 
 class ChallengeType(Enum):
     SYNTHETIC = 1

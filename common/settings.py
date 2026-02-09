@@ -129,13 +129,13 @@ class Settings:
 
     @property
     def cpu_count(self) -> int:
-       if self._cpu_count is None:
+        if self._cpu_count is None:
             cpu_count_env = os.environ.get("FORWARD_CPU_COUNT", None)
             if cpu_count_env is not None:
                 self._cpu_count = int(cpu_count_env)
             else:
                 self._cpu_count = utils.get_available_cpu_count()
-       return self._cpu_count
+        return self._cpu_count
 
     def miners(self) -> Tuple[List[int], List[str]]:
         uids = []
