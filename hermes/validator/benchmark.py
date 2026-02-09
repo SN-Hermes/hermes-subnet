@@ -52,7 +52,6 @@ class BenchMark:
         for k in keys_to_delete:
             del self.failure_uploads[k]
 
-
     async def upload_ema(
             self,
             uid: int,
@@ -70,6 +69,21 @@ class BenchMark:
             "new_ema_scores": processed_scores,
         }
         await self._send_to_server("new_ema", [new_ema_scores_payload])
+
+    async def upload_os_info(
+            self,
+            uid: int,
+            address: str,
+            version: str,
+            cpu_count: int
+        ):
+        os_info_payload = {
+            "uid": uid,
+            "address": address,
+            "version": version,
+            "cpu_count": cpu_count,
+        }
+        await self._send_to_server("os_info", [os_info_payload])
 
     async def upload(
         self,

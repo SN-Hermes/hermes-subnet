@@ -27,6 +27,8 @@ import common.utils as utils
 from hermes.validator.question_generator import question_generator
 from hermes.validator.scorer_manager import ScorerManager
 from hermes.validator.workload_manager import WorkloadManager
+from hermes.validator.dendrite import HighConcurrencyDendrite
+from hermes.validator.multiprocess_query import query_miners_multiprocess
 
 
 @dataclass
@@ -45,7 +47,7 @@ class ChallengeManager:
     uid: int
     round_id: int
     challenge_interval: int
-    dendrite: bt.Dendrite
+    dendrite: HighConcurrencyDendrite
     llm_synthetic: ChatOpenAI
     llm_score: ChatOpenAI
     agent_manager: AgentManager
@@ -64,7 +66,7 @@ class ChallengeManager:
         settings: Settings, 
         save_project_dir: str | Path, 
         uid: int, 
-        dendrite: bt.Dendrite,
+        dendrite: HighConcurrencyDendrite,
         organic_score_queue: list,
         ipc_synthetic_score: list,
         ipc_miners_dict: dict,
@@ -159,6 +161,12 @@ class ChallengeManager:
 
             # pull projects & init agents
             await self.agent_manager.start(mode == "pull", role="validator")
+            await self.benchmark.upload_os_info(
+                uid=self.uid,
+                address=self.settings.wallet.hotkey.ss58_address,
+                version=self.settings.version,
+                cpu_count=self.settings.cpu_count
+            )
 
             self.task = [
                 asyncio.create_task(self.workload_manager.compute_organic_task()),
@@ -197,17 +205,20 @@ class ChallengeManager:
                     challenge_interval = 30
                     continue
 
+                # Randomly shuffle miners
                 miners_list = list(self.ipc_miners_dict.items())
                 random.shuffle(miners_list)
                 
                 uids = []
                 hotkeys = []
                 ips = []
+                axons: list[str] = []
                 seen_ips = {}  # ip -> first uid that used it
                 for uid, miner_info in miners_list:
                     if uid != self.uid:
                         uids.append(uid)
                         hotkeys.append(miner_info["hotkey"])
+                        axons.append(miner_info["axon"])
                         ip = miner_info.get("ip")
                         ips.append(ip)
                         if ip and ip not in seen_ips:
@@ -320,24 +331,18 @@ class ChallengeManager:
                     # query all miner
                     logger.info(f"[ChallengeManager] - {challenge_id} query miners: {uids}")
 
-                    # Use semaphore to limit concurrent requests
-                    max_concurrent_requests = int(os.getenv("MAX_CONCURRENT_MINER_REQUESTS", 20))
-                    semaphore = asyncio.Semaphore(max_concurrent_requests)
-
-                    async def query_with_semaphore(uid, hotkey, ip):
-                        async with semaphore:
-                            return await self.query_miner(
-                                uid=uid,
-                                hotkey=hotkey,
-                                cid_hash=cid_hash,
-                                challenge_id=challenge_id,
-                                question=question,
-                                block_height=block_cache[cid_hash],
-                                is_ip_duplicated=bool(ip) and seen_ips.get(ip) != uid
-                            )
-                    
-                    responses = await asyncio.gather(
-                        *(query_with_semaphore(uid, hotkey, ip) for uid, hotkey, ip in zip(uids, hotkeys, ips))
+                    responses = await query_miners_multiprocess(
+                        uids=uids,
+                        hotkeys=hotkeys,
+                        axons=axons,
+                        ips=ips,
+                        seen_ips=seen_ips,
+                        cid_hash=cid_hash,
+                        challenge_id=challenge_id,
+                        question=question,
+                        block_height=block_cache[cid_hash],
+                        timeout=self.forward_miner_timeout,
+                        settings=self.settings,
                     )
 
                     logger.info(f"[ChallengeManager] - {challenge_id} query miners done")

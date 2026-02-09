@@ -28,7 +28,6 @@ from fastapi.responses import StreamingResponse
 from loguru import logger
 import uvicorn
 from multiprocessing.synchronize import Event
-from common.meta_config import MetaConfig
 from common.table_formatter import table_formatter
 from common.enums import ErrorCode, RoleFlag
 from common.logger import HermesLogger
@@ -87,28 +86,33 @@ class Validator(BaseNeuron):
             ipc_common_config: dict,
             event_stop: Event,
     ):
-        self.challenge_manager = ChallengeManager(
-            settings=self.settings,
-            save_project_dir=Path(__file__).parent.parent / "projects" / self.role,
-            uid=self.uid,
-            dendrite=self.dendrite,
-            organic_score_queue=organic_score_queue,
-            ipc_synthetic_score=ipc_synthetic_score,
-            ipc_miners_dict=ipc_miners_dict,
-            ipc_synthetic_token_usage=ipc_synthetic_token_usage,
-            ipc_meta_config=ipc_meta_config,
-            ipc_common_config=ipc_common_config,
-            event_stop=event_stop,
-            score_state_path=Path(self.settings.base_dir) / ".data" / f"{self.role}_score_state.pt",
-            work_state_path=Path(self.settings.base_dir) / ".data" / f"{self.role}_workload_state.pt",
-            v=self,
-        )
-        tasks = [
-            asyncio.create_task(
-                self.challenge_manager.start()
-            ),
-        ]
-        await asyncio.gather(*tasks)
+        from hermes.validator.dendrite import HighConcurrencyDendrite
+        dendrite = HighConcurrencyDendrite(wallet=self.settings.wallet)
+        try:
+            self.challenge_manager = ChallengeManager(
+                settings=self.settings,
+                save_project_dir=Path(__file__).parent.parent / "projects" / self.role,
+                uid=self.uid,
+                dendrite=dendrite,
+                organic_score_queue=organic_score_queue,
+                ipc_synthetic_score=ipc_synthetic_score,
+                ipc_miners_dict=ipc_miners_dict,
+                ipc_synthetic_token_usage=ipc_synthetic_token_usage,
+                ipc_meta_config=ipc_meta_config,
+                ipc_common_config=ipc_common_config,
+                event_stop=event_stop,
+                score_state_path=Path(self.settings.base_dir) / ".data" / f"{self.role}_score_state.pt",
+                work_state_path=Path(self.settings.base_dir) / ".data" / f"{self.role}_workload_state.pt",
+                v=self,
+            )
+            tasks = [
+                asyncio.create_task(
+                    self.challenge_manager.start()
+                ),
+            ]
+            await asyncio.gather(*tasks)
+        finally:
+            await dendrite.aclose_session()
 
     async def run_api(
             self,
@@ -183,7 +187,8 @@ class Validator(BaseNeuron):
                         "uid": uid,
                         "projects": r.response.get("capacity", {}).get("projects", []),
                         "hotkey": r.axon.hotkey,
-                        "ip": ip
+                        "ip": ip,
+                        "axon": axon.to_string()
                     }
                 else:
                     logger.debug(f"UID {uid} request failed.")
@@ -194,7 +199,8 @@ class Validator(BaseNeuron):
                 "uid": uid,
                 "projects": [],
                 "hotkey": "",
-                "ip": ip
+                "ip": ip,
+                "axon": axon.to_string()
             }
 
         while not event_stop.is_set():
@@ -225,7 +231,8 @@ class Validator(BaseNeuron):
                     ipc_miners_dict[r["uid"]] = {
                         "hotkey": r["hotkey"],
                         "projects": r["projects"],
-                        "ip": r["ip"]
+                        "ip": r["ip"],
+                        "axon": r["axon"]
                     }
                 logger.debug(f"[CheckMiner] Updated miners: {ipc_miners_dict}")
 
@@ -494,7 +501,7 @@ async def main():
                     event_stop
                 ),
                 name="ChallengeProcess",
-                daemon=True,
+                daemon=False,
             )
             challenge_process.start()
             processes.append(challenge_process)
@@ -525,61 +532,72 @@ async def main():
             miner_checking_process.start()
             processes.append(miner_checking_process)
 
+            from common.meta_config import MetaConfig
             meta = MetaConfig()
             logger.info(f"main process id: {os.getpid()}")
+
             while not event_stop.is_set():
                 try:
                     new_meta = await meta.pull()
                     logger.debug(f"Pulled new meta config: {new_meta}")
                     if new_meta.data:
+                        # Read all values from remote config at once
                         new_min_latency_improvement_ratio = new_meta.data.get("min_latency_improvement_ratio", 0.2)
                         new_benchmark_mode = new_meta.data.get("benchmark_mode", "sample")
                         new_benchmark_sample_rate = new_meta.data.get("benchmark_sample_rate", 0.8)
                         new_benchmark_batch_size = new_meta.data.get("benchmark_batch_size", 0)
                         new_suspicious_uids = new_meta.data.get("suspicious_uids", [])
-                        ipc_meta_config.update({
-                            "suspicious_uids": new_suspicious_uids
-                        })
-
+                        new_weight_a = new_meta.data.get("weight_a", 70)
+                        new_weight_b = new_meta.data.get("weight_b", 30)
                         new_organic_success_score_threshold = new_meta.data.get("organic_success_score_threshold", 5)
                         new_organic_success_rate_threshold = new_meta.data.get("organic_success_rate_threshold", 0.7)
 
-                        if new_min_latency_improvement_ratio != ipc_meta_config.get("min_latency_improvement_ratio", 0.2):
-                            ipc_meta_config.update({
-                                "min_latency_improvement_ratio": new_min_latency_improvement_ratio
-                            })
-                            logger.info(f"Updating min_latency_improvement_ratio from {ipc_meta_config.get('min_latency_improvement_ratio', 0.2)} to {new_min_latency_improvement_ratio}")
+                        current_config = dict(ipc_meta_config)  # Convert to regular dict to minimize lock time
+                        
+                        # Build updates dict with only changed values
+                        updates = {}
+                        
+                        current_suspicious_uids = current_config.get("suspicious_uids", [])
+                        if new_suspicious_uids != current_suspicious_uids:
+                            updates["suspicious_uids"] = new_suspicious_uids
+                            logger.info(f"Updating suspicious_uids from {current_suspicious_uids} to {new_suspicious_uids}")
+                        
+                        # Check and log changes for other fields
+                        if new_min_latency_improvement_ratio != current_config.get("min_latency_improvement_ratio", 0.2):
+                            updates["min_latency_improvement_ratio"] = new_min_latency_improvement_ratio
+                            logger.info(f"Updating min_latency_improvement_ratio from {current_config.get('min_latency_improvement_ratio', 0.2)} to {new_min_latency_improvement_ratio}")
 
-                        if new_benchmark_mode != ipc_meta_config.get("benchmark_mode", "sample"):
-                            ipc_meta_config.update({
-                                "benchmark_mode": new_benchmark_mode
-                            })
-                            logger.info(f"Updating benchmark_mode from {ipc_meta_config.get('benchmark_mode', 'sample')} to {new_benchmark_mode}")
+                        if new_benchmark_mode != current_config.get("benchmark_mode", "sample"):
+                            updates["benchmark_mode"] = new_benchmark_mode
+                            logger.info(f"Updating benchmark_mode from {current_config.get('benchmark_mode', 'sample')} to {new_benchmark_mode}")
 
-                        if new_benchmark_sample_rate != ipc_meta_config.get("benchmark_sample_rate", 0.1):
-                            ipc_meta_config.update({
-                                "benchmark_sample_rate": new_benchmark_sample_rate
-                            })
-                            logger.info(f"Updating benchmark_sample_rate from {ipc_meta_config.get('benchmark_sample_rate', 0.1)} to {new_benchmark_sample_rate}")
+                        if new_benchmark_sample_rate != current_config.get("benchmark_sample_rate", 0.1):
+                            updates["benchmark_sample_rate"] = new_benchmark_sample_rate
+                            logger.info(f"Updating benchmark_sample_rate from {current_config.get('benchmark_sample_rate', 0.1)} to {new_benchmark_sample_rate}")
 
-                        if new_benchmark_batch_size != ipc_meta_config.get("benchmark_batch_size", 0):
-                            ipc_meta_config.update({
-                                "benchmark_batch_size": new_benchmark_batch_size
-                            })
-                            logger.info(f"Updating benchmark_batch_size from {ipc_meta_config.get('benchmark_batch_size', 0)} to {new_benchmark_batch_size}")
+                        if new_benchmark_batch_size != current_config.get("benchmark_batch_size", 0):
+                            updates["benchmark_batch_size"] = new_benchmark_batch_size
+                            logger.info(f"Updating benchmark_batch_size from {current_config.get('benchmark_batch_size', 0)} to {new_benchmark_batch_size}")
 
+                        if new_weight_a != current_config.get("weight_a", 70):
+                            updates["weight_a"] = new_weight_a
+                            logger.info(f"Updating weight_a from {current_config.get('weight_a', 70)} to {new_weight_a}")
 
-                        if new_organic_success_score_threshold != ipc_meta_config.get("organic_success_score_threshold", 0):
-                            ipc_meta_config.update({
-                                "organic_success_score_threshold": new_organic_success_score_threshold
-                            })
-                            logger.info(f"Updating organic_success_score_threshold from {ipc_meta_config.get('organic_success_score_threshold', 0)} to {new_organic_success_score_threshold}")
+                        if new_weight_b != current_config.get("weight_b", 30):
+                            updates["weight_b"] = new_weight_b
+                            logger.info(f"Updating weight_b from {current_config.get('weight_b', 30)} to {new_weight_b}")
 
-                        if new_organic_success_rate_threshold != ipc_meta_config.get("organic_success_rate_threshold", 0):
-                            ipc_meta_config.update({
-                                "organic_success_rate_threshold": new_organic_success_rate_threshold
-                            })
-                            logger.info(f"Updating organic_success_rate_threshold from {ipc_meta_config.get('organic_success_rate_threshold', 0)} to {new_organic_success_rate_threshold}")
+                        if new_organic_success_score_threshold != current_config.get("organic_success_score_threshold", 0):
+                            updates["organic_success_score_threshold"] = new_organic_success_score_threshold
+                            logger.info(f"Updating organic_success_score_threshold from {current_config.get('organic_success_score_threshold', 0)} to {new_organic_success_score_threshold}")
+
+                        if new_organic_success_rate_threshold != current_config.get("organic_success_rate_threshold", 0):
+                            updates["organic_success_rate_threshold"] = new_organic_success_rate_threshold
+                            logger.info(f"Updating organic_success_rate_threshold from {current_config.get('organic_success_rate_threshold', 0)} to {new_organic_success_rate_threshold}")
+
+                        if updates:
+                            ipc_meta_config.update(updates)
+                            logger.debug(f"Batch updated {len(updates)} config values")
 
                 except Exception as e:
                     logger.error(f"Failed to refresh meta config: {e}")

@@ -20,6 +20,7 @@ class Settings:
     _env_file: str | None = None
     _external_ip: str | None = None
     _version: str | None = None
+    _cpu_count: int | None = None
 
     def load_env_file(self, role: str | None = None):
         env_file = f".env.{role}" if role else ".env"
@@ -125,6 +126,16 @@ class Settings:
                 logger.warning(f"Failed to load version from pyproject.toml: {e}, using default")
                 self._version = "unknown"
         return self._version
+
+    @property
+    def cpu_count(self) -> int:
+        if self._cpu_count is None:
+            cpu_count_env = os.environ.get("FORWARD_CPU_COUNT", None)
+            if cpu_count_env is not None:
+                self._cpu_count = int(cpu_count_env)
+            else:
+                self._cpu_count = utils.get_available_cpu_count()
+        return self._cpu_count
 
     def miners(self) -> Tuple[List[int], List[str]]:
         uids = []

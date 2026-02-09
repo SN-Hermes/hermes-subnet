@@ -44,7 +44,7 @@ class ScorerManager:
         ground_truth_scores_raw = await asyncio.gather(
             *(self.cal_ground_truth_score(ground_truth, r, cid_hash, token_usage_metrics, round_id=round_id) for r in miner_synapses)
         )
-        ground_truth_scores = [utils.fix_float(utils.safe_float_convert(s)) for s in ground_truth_scores_raw]
+        ground_truth_scores = [min(utils.fix_float(utils.safe_float_convert(s)), 10.0) for s in ground_truth_scores_raw]
         elapse_time = [r.elapsed_time for r in miner_synapses]
         elapse_weights = [utils.fix_float(utils.get_elapse_weight_quadratic(r.elapsed_time, ground_cost, min_latency_improvement_ratio)) for r in miner_synapses]
         zip_scores = [utils.fix_float(s * w) for s, w in zip(ground_truth_scores, elapse_weights)]

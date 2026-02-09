@@ -9,8 +9,87 @@ from loguru import logger
 import netaddr
 import requests
 import hashlib
+import multiprocessing as mp
+from pathlib import Path
 from langchain_core.messages import BaseMessage, AIMessage
 from datetime import datetime, timedelta
+
+
+def get_available_cpu_count():
+    """
+    Get the number of available CPU cores, considering container limits in K8s environments.
+    
+    In Kubernetes/containerized environments, multiprocessing.cpu_count() returns the host's CPU count,
+    not the container's allocated CPU cores. This function tries to detect the actual available CPUs.
+    
+    Priority order:
+    1. cgroup v2/v1 CPU quota (container hard limit) - HIGHEST PRIORITY
+    2. Environment variables (K8s may set these)
+    3. sched_getaffinity (CPU affinity, but may show node CPUs not container limit)
+    4. cgroup shares (weight-based, least reliable)
+    5. mp.cpu_count() (fallback)
+    """
+    
+    # 1. cgroup v2 cpu.max（K8s CPU limits）
+    try:
+        cpu_max_path = Path('/sys/fs/cgroup/cpu.max')
+        if cpu_max_path.exists():
+            cpu_max = cpu_max_path.read_text().strip()
+            if cpu_max != 'max':
+                quota, period = map(int, cpu_max.split())
+                if quota > 0 and period > 0:
+                    cores = quota / period
+                    return max(1, min(int(cores + 0.999), mp.cpu_count()))
+    except (FileNotFoundError, ValueError, OSError):
+        pass
+
+    # 2. cgroup v1 cpu.cfs_quota_us（old version K8s CPU limits）
+    try:
+        quota_path = Path("/sys/fs/cgroup/cpu/cpu.cfs_quota_us")
+        period_path = Path("/sys/fs/cgroup/cpu/cpu.cfs_period_us")
+        if quota_path.exists() and period_path.exists():
+            quota = int(quota_path.read_text().strip())
+            period = int(period_path.read_text().strip())
+            # quota=-1 indicates unlimited
+            if quota > 0 and period > 0:
+                cores = quota / period
+                return max(1, min(int(cores + 0.999), mp.cpu_count()))
+    except (FileNotFoundError, ValueError, OSError):
+        pass
+
+    # 3. Environment variables (some orchestrators may set)
+    cpu_limit = os.environ.get('CPU_LIMIT') or os.environ.get('GOMAXPROCS')
+    if cpu_limit:
+        try:
+            cores = int(float(cpu_limit))
+            if cores > 0:
+                return max(1, min(cores, mp.cpu_count()))
+        except (ValueError, TypeError):
+            pass
+
+    # 4. sched_getaffinity（Linux process CPU affinity）
+    # notice: in K8s this may return the node's CPU count, not the container limit
+    try:
+        affinity_cpus = len(os.sched_getaffinity(0))
+        return max(1, affinity_cpus)
+    except (AttributeError, OSError):
+        # Not available on macOS/Windows
+        pass
+
+    # 5. cgroup v1 shares（weights are not limits, least reliable）
+    try:
+        shares_path = Path('/sys/fs/cgroup/cpu/cpu.shares')
+        if shares_path.exists():
+            shares = int(shares_path.read_text().strip())
+            # default 1024=1 core, but this is just a weight
+            if shares > 1024:
+                cores = shares / 1024
+                return max(1, min(int(cores), mp.cpu_count()))
+    except (FileNotFoundError, ValueError, OSError):
+        pass
+
+    # 6. Fallback: system total CPU count
+    return mp.cpu_count()
 
 
 def safe_json_loads(json_str: str):
