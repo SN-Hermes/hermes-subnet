@@ -31,9 +31,10 @@ class ScorerManager:
         self.ipc_meta_config = ipc_meta_config
         self.load_state()
 
-    async def compute_challenge_score(self, 
-        ground_truth: str, 
-        ground_cost: float, 
+    async def compute_challenge_score(
+        self,
+        ground_truth: str,
+        ground_cost: float,
         miner_synapses: List[SyntheticNonStreamSynapse],
         challenge_id: str = "",
         cid_hash: str = "",
@@ -41,12 +42,33 @@ class ScorerManager:
         min_latency_improvement_ratio: float = 0.2,
         round_id: int = 0
     ) -> Tuple[List[float], List[float], List[float], List[float]]:
-        ground_truth_scores_raw = await asyncio.gather(
-            *(self.cal_ground_truth_score(ground_truth, r, cid_hash, token_usage_metrics, round_id=round_id) for r in miner_synapses)
-        )
-        ground_truth_scores = [min(utils.fix_float(utils.safe_float_convert(s)), 10.0) for s in ground_truth_scores_raw]
         elapse_time = [r.elapsed_time for r in miner_synapses]
-        elapse_weights = [utils.fix_float(utils.get_elapse_weight_quadratic(r.elapsed_time, ground_cost, min_latency_improvement_ratio)) for r in miner_synapses]
+        elapse_weights = [
+            utils.fix_float(
+                utils.get_elapse_weight_quadratic(
+                    r.elapsed_time,
+                    ground_cost,
+                    min_latency_improvement_ratio
+                )
+            ) for r in miner_synapses
+        ]
+        
+        # Only calculate ground truth scores for miners with non-zero elapse weights
+        valid_miners = [(r, i) for i, (r, w) in enumerate(zip(miner_synapses, elapse_weights)) if w > 0]
+        
+        if valid_miners:
+            valid_scores = await asyncio.gather(
+                *(self.cal_ground_truth_score(ground_truth, r, cid_hash, token_usage_metrics, round_id=round_id) for r, _ in valid_miners)
+            )
+        else:
+            valid_scores = []
+        
+        # Reconstruct ground_truth_scores_raw in original order
+        ground_truth_scores_raw = ["0.0"] * len(miner_synapses)
+        for (_, i), score in zip(valid_miners, valid_scores):
+            ground_truth_scores_raw[i] = score
+        
+        ground_truth_scores = [min(utils.fix_float(utils.safe_float_convert(s)), 10.0) for s in ground_truth_scores_raw]
         zip_scores = [utils.fix_float(s * w) for s, w in zip(ground_truth_scores, elapse_weights)]
 
         logger.debug(f"[ScorerManager] - {challenge_id} ground_truth_scores: {ground_truth_scores_raw}, elapse_time: {elapse_time}, elapse_weights: {elapse_weights}, zip_scores: {zip_scores}")

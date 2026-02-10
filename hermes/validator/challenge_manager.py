@@ -379,7 +379,7 @@ class ChallengeManager:
                         elapse_weights=elapse_weights,
                         zip_scores=zip_scores,
                         cid=cid_hash,
-                        max_table_rows=int(os.getenv("MAX_TABLE_ROWS", 256))
+                        max_table_rows=int(os.getenv("MAX_TABLE_ROWS", 50))
                     )
 
                     await self.benchmark.upload(
@@ -455,7 +455,7 @@ class ChallengeManager:
                     quality_scores=log_quality_scores,
                     workload_score=workload_score,
                     new_ema_scores=new_ema_scores,
-                    max_table_rows=int(os.getenv("MAX_TABLE_ROWS", 256))
+                    max_table_rows=int(os.getenv("MAX_TABLE_ROWS", 50))
                 )
                 await self.benchmark.upload_ema(
                     uid=self.uid,
