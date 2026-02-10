@@ -102,9 +102,18 @@ class ChallengeManager:
         )
 
         score_model_name = score_model_name or os.getenv("SCORE_LLM_MODEL", "google/gemini-3-flash-preview")
+        score_model_base_url = os.getenv("SCORE_LLM_MODEL_BASE_URL", None)
+        score_model_api_key = os.getenv("SCORE_LLM_MODEL_API_KEY", None)
+        score_model_args = {}
+        if score_model_base_url:
+            score_model_args["base_url"] = score_model_base_url
+        if score_model_api_key:
+            score_model_args["api_key"] = score_model_api_key
+
         self.llm_score = ChatOpenAI(
             model=score_model_name,
-            temperature=0
+            temperature=0,
+            **score_model_args
         )
 
         self.agent_manager = AgentManager(
