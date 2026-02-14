@@ -261,6 +261,16 @@ class ChallengeManager:
                     for attempt in range(max_retries):
                         challenge_id = str(uuid4())
 
+                        # get latest block
+                        latest_block = await utils.get_latest_block(project_config.endpoint, project_config.node_type)
+                        if latest_block is None and block_cache.get(cid_hash, None) is None:
+                            logger.warning(f"[ChallengeManager] - {cid_hash} Failed to get latest block (attempt {attempt + 1}/{max_retries})")
+                            error_msgs.append(f"(round: {self.round_id}, attempt: {attempt + 1}/{max_retries}, {cid_hash}) Failed to get latest block.")
+                            continue
+                        
+                        if latest_block is not None:
+                            block_cache[cid_hash] = latest_block - 1000
+                        
                         # generate challenge
                         question, error = await question_generator.generate_question(
                             cid_hash, 
@@ -276,17 +286,6 @@ class ChallengeManager:
                             logger.warning(f"[ChallengeManager] - {cid_hash} Failed to generate question (attempt {attempt + 1}/{max_retries})")
                             error_msgs.append(f"(round: {self.round_id}, attempt: {attempt + 1}/{max_retries}, {cid_hash}) {error}")
                             continue
-
-                        # get latest block
-                        latest_block = await utils.get_latest_block(project_config.endpoint, project_config.node_type)
-                        if latest_block is None and block_cache.get(cid_hash, None) is None:
-                            logger.warning(f"[ChallengeManager] - {cid_hash} Failed to get latest block (attempt {attempt + 1}/{max_retries})")
-                            error_msgs.append(f"(round: {self.round_id}, attempt: {attempt + 1}/{max_retries}, {cid_hash}) Failed to get latest block.")
-                            continue
-                        
-                        if latest_block is not None:
-                            block_cache[cid_hash] = latest_block - 1000
-                        
                         logger.info(f"[ChallengeManager] - {cid_hash} Selected block height: {block_cache[cid_hash]}")
 
                         success, ground_truth, ground_cost, metrics_data, model_name = await self.generate_ground_truth(
@@ -320,9 +319,10 @@ class ChallengeManager:
                         # Valid challenge generated, break retry loop
                         challenge_generated = True
                         break
+
                     # Skip this project if all retries failed
                     if not challenge_generated:
-                        logger.error(f"[ChallengeManager] - {cid_hash} Failed to generate valid challenge after {max_retries} attempts, skipping project")
+                        logger.error(f"[ChallengeManager] - {cid_hash} Failed to generate valid challenge after {max_retries} attempts")
                         await self.benchmark.add_failure(
                             uid= self.uid,
                             round_id= self.round_id,
@@ -332,9 +332,11 @@ class ChallengeManager:
                             cid_hash= cid_hash,
                             error_msgs= error_msgs
                         )
+                        project_score_matrix.append([0.0] * len(uids))
                         continue
 
                     if skip_query_miner:
+                        project_score_matrix.append([0.0] * len(uids))
                         continue
 
                     # query all miner
@@ -440,7 +442,7 @@ class ChallengeManager:
                     )
 
                 if not project_score_matrix:
-                    logger.warning("[ChallengeManager] No valid project score matrix, skipping this round.")
+                    logger.warning(f"[ChallengeManager] No valid project score matrix {self.round_id}")
                     challenge_interval = 30
                     continue
 
