@@ -45,7 +45,7 @@ class QuestionGenerator:
             weight_b: int = 30,
         ) -> tuple[str, dict | None, str | None]:
         if not project.schema_content:
-            return "", "schema not found"
+            return "", None, "schema not found"
 
         if cid_hash not in self.project_question_history:
             self.project_question_history[cid_hash] = deque(maxlen=self.max_history)
