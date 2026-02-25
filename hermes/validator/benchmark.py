@@ -70,6 +70,35 @@ class BenchMark:
         }
         await self._send_to_server("new_ema", [new_ema_scores_payload])
 
+    async def upload_weights(
+            self,
+            uid: int,
+            address: str,
+            version: str,
+            round_id: int,
+            raw_uids: list[int],
+            raw_weights: list[float],
+            processed_weight_uids: list[int],
+            processed_weights: list[float],
+            burn_ratio: float,
+            success: bool,
+            error_msg: str | None = None,
+        ):
+        weights_payload = {
+            "uid": uid,
+            "address": address,
+            "version": version,
+            "round_id": round_id,
+            "raw_uids": raw_uids,
+            "raw_weights": raw_weights,
+            "burn_ratio": burn_ratio,
+            "processed_weight_uids": processed_weight_uids,
+            "processed_weights": processed_weights,
+            "success": success,
+            "error_msg": error_msg,
+        }
+        await self._send_to_server("new_weights", [weights_payload])
+
     async def upload_os_info(
             self,
             uid: int,

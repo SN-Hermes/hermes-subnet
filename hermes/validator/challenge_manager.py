@@ -616,7 +616,7 @@ class ChallengeManager:
                         continue
                     logger.info("[ChallengeManager] No historical scores available. Submitting uniform fallback weights.")
 
-                self._set_weights(uids, scores)
+                await self._set_weights(uids, scores)
                 self._last_set_weight_time = time.time()
                 if epoch_info:
                     self._last_epoch_submitted = epoch_info.epoch_index
@@ -698,13 +698,14 @@ class ChallengeManager:
         # uniform_weight = 1.0 / count
         return miner_uids, [0] * count
 
-    def _set_weights(self, uids: list[int], scores: list[float]):
+    async def _set_weights(self, uids: list[int], scores: list[float]):
         logger.info(f"[ChallengeManager] set_weights for uids: {uids}, scores: {scores}")
         scores_np = np.array(scores, dtype=np.float32)
+        burn_ratio = self.ipc_meta_config.get("burn_ratio", 0)
+        burn_uid = self.settings.burn_uid
 
         if np.all(scores_np == 0):
             logger.warning("[ChallengeManager] All scores are zero, burning weights.")
-            burn_uid = self.settings.burn_uid
             burn_uids_np = np.array([burn_uid], dtype=np.int64)
             burn_weights_np = np.array([1.0], dtype=np.float32)
             (
@@ -718,13 +719,41 @@ class ChallengeManager:
                 metagraph=self.settings.metagraph,
             )
         else:
+            # Apply burn ratio if configured
+            if burn_ratio > 0 and burn_ratio < 1.0:
+                burn_idx = None
+                if burn_uid in uids:
+                    burn_idx = uids.index(burn_uid)
+                
+                # Calculate scores_sum excluding burn_uid's current weight if it exists
+                if burn_idx is not None:
+                    scores_sum = scores_np.sum() - scores_np[burn_idx]
+                else:
+                    scores_sum = scores_np.sum()
+                
+                if scores_sum > 0:
+                    # Calculate burn weight using correct formula:
+                    # burn_weight / (burn_weight + scores_sum) = burn_ratio
+                    # => burn_weight = scores_sum * burn_ratio / (1 - burn_ratio)
+                    burn_weight = scores_sum * burn_ratio / (1.0 - burn_ratio)
+                    
+                    if burn_idx is not None:
+                        scores_np[burn_idx] = burn_weight
+                        logger.info(f"[ChallengeManager] Updated burn_uid={burn_uid} at index={burn_idx}, burn_ratio={burn_ratio*100:.1f}%, burn_weight={burn_weight:.4f}, miner_sum={scores_sum:.4f}")
+                    else:
+                        uids = [burn_uid] + uids
+                        scores_np = np.concatenate([np.array([burn_weight], dtype=np.float32), scores_np])
+                        logger.info(f"[ChallengeManager] Inserted burn_uid={burn_uid} at index=0, burn_ratio={burn_ratio*100:.1f}%, burn_weight={burn_weight:.4f}, miner_sum={scores_sum:.4f}")
+                else:
+                    logger.warning(f"[ChallengeManager] Cannot apply burn_ratio with zero scores_sum")
+
             (
                 processed_weight_uids,
                 processed_weights,
             ) = bt.utils.weight_utils.process_weights_for_netuid(
-                    uids = np.array(uids, dtype=np.int64),
+                    uids=np.array(uids, dtype=np.int64),
                     # weights = raw_weights.detach().cpu().numpy().astype(np.float32),
-                    weights = scores_np,
+                    weights=scores_np,
                     netuid=self.settings.netuid,
                     subtensor=self.settings.subtensor,
                     metagraph=self.settings.metagraph,
@@ -741,6 +770,24 @@ class ChallengeManager:
             wait_for_finalization=False,
             version_key=10010,
         )
+        # Convert to regular Python lists for benchmark upload
+        processed_uids_list = processed_weight_uids.tolist() if hasattr(processed_weight_uids, 'tolist') else list(processed_weight_uids)
+        processed_weights_list = [round(float(w), 4) for w in processed_weights]
+
+        await self.benchmark.upload_weights(
+            uid=self.uid,
+            address=self.settings.wallet.hotkey.ss58_address,
+            version=self.settings.version,
+            round_id=self.round_id,
+            raw_uids=uids,
+            raw_weights=scores,
+            processed_weight_uids=processed_uids_list,
+            processed_weights=processed_weights_list,
+            burn_ratio=burn_ratio,
+            success=suc,
+            error_msg=msg,
+        )
+
         logger.info(f"processed_weights result: {suc, msg}")
 
     async def refresh_agents(self):

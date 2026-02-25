@@ -551,6 +551,7 @@ async def main():
                         new_weight_b = new_meta.data.get("weight_b", 40)
                         new_organic_success_score_threshold = new_meta.data.get("organic_success_score_threshold", 5)
                         new_organic_success_rate_threshold = new_meta.data.get("organic_success_rate_threshold", 0.7)
+                        new_burn_ratio = new_meta.data.get("burn_ratio", 0)
 
                         current_config = dict(ipc_meta_config)  # Convert to regular dict to minimize lock time
                         
@@ -594,6 +595,10 @@ async def main():
                         if new_organic_success_rate_threshold != current_config.get("organic_success_rate_threshold", 0):
                             updates["organic_success_rate_threshold"] = new_organic_success_rate_threshold
                             logger.info(f"Updating organic_success_rate_threshold from {current_config.get('organic_success_rate_threshold', 0)} to {new_organic_success_rate_threshold}")
+
+                        if new_burn_ratio != current_config.get("burn_ratio", 0):
+                            updates["burn_ratio"] = new_burn_ratio
+                            logger.info(f"Updating burn_ratio from {current_config.get('burn_ratio', 0)} to {new_burn_ratio}")
 
                         if updates:
                             ipc_meta_config.update(updates)
