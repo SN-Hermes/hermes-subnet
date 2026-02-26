@@ -720,6 +720,35 @@ def kill_process_group():
     except Exception as e:
         logger.error(f"Failed to kill process group: {e}")
 
+def append_to_jsonl(
+    file_path: str,
+    data: any,
+) -> bool:
+    try:
+        # Ensure directory exists
+        os.makedirs(os.path.dirname(file_path), exist_ok=True)
+        
+        # Append to file
+        with open(file_path, 'a', encoding='utf-8') as f:
+            f.write(json.dumps(data, ensure_ascii=False) + '\n')
+        
+        logger.debug(f"Successfully appended sample to {file_path}")
+        return True
+        
+    except Exception as e:
+        logger.error(f"Failed to append to JSONL file {file_path}: {e}")
+        return False
+
+def get_project_phase_str(phase: int) -> str:
+    from common.enums import ProjectPhase
+    if phase == ProjectPhase.NORMAL.value:
+        return "normal"
+    elif phase == ProjectPhase.HATCHING.value:
+        return "hatching"
+    elif phase == ProjectPhase.WARMUP.value:
+        return "warmup"
+    else:
+        return f"Unknown Phase ({phase})"
 
 if __name__ == "__main__":
     ground_truth_cost = 15.0
@@ -777,23 +806,3 @@ if __name__ == "__main__":
     logger.info(f"Total Cost: ${total_cost_info['total_cost']:.6f}")
     logger.info(f"Average Token Price: ${total_cost_info['avg_token_price']:.10f}")
     logger.info(f"Cost Breakdown - Input: ${total_cost_info['input_cost']:.6f}, Cache: ${total_cost_info['cache_cost']:.6f}, Output: ${total_cost_info['output_cost']:.6f}")
-
-
-def append_to_jsonl(
-    file_path: str,
-    data: any,
-) -> bool:
-    try:
-        # Ensure directory exists
-        os.makedirs(os.path.dirname(file_path), exist_ok=True)
-        
-        # Append to file
-        with open(file_path, 'a', encoding='utf-8') as f:
-            f.write(json.dumps(data, ensure_ascii=False) + '\n')
-        
-        logger.debug(f"Successfully appended sample to {file_path}")
-        return True
-        
-    except Exception as e:
-        logger.error(f"Failed to append to JSONL file {file_path}: {e}")
-        return False

@@ -29,6 +29,7 @@ class BenchMark:
             version: str,
             failure_type: int,
             cid_hash: str,
+            project_phase: int,
             error_msgs: list[str]
     ):
         self.failure_uploads[round_id] = self.failure_uploads.get(round_id, 0) + 1
@@ -40,6 +41,7 @@ class BenchMark:
             "version": version,
             "failure_type": failure_type,
             "cid_hash": cid_hash,
+            "project_phase": project_phase,
             "error_msgs": error_msgs,
             "timestamp": int(time.time())
         }
@@ -122,6 +124,7 @@ class BenchMark:
         cid: str,
         challenge_type: int,
         challenge_id: str,
+        project_phase: int,
         question: str,
         question_generator_model_name: str,
         ground_truth_model_name: str,
@@ -157,6 +160,7 @@ class BenchMark:
             "cid": cid,
             "challengeType": challenge_type,
             "challengeId": challenge_id,
+            "projectPhase": project_phase,
             "question": question,
             "questionGeneratorModelName": question_generator_model_name,
             "questionGeneratorMetrics": question_generator_metrics,

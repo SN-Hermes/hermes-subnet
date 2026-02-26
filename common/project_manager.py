@@ -12,6 +12,7 @@ from pydantic import BaseModel
 import yaml
 from agent.subquery_graphql_agent.base import ProjectConfig
 from agent.subquery_graphql_agent.node_types import detect_node_type
+from common.enums import ProjectPhase
 import common.utils as utils
 
 
@@ -23,6 +24,7 @@ class Project(BaseModel):
     enabled: bool
     description: str
     name: str
+    phase: int
     metadata: Metadata
 
 class ProjectData(BaseModel):
@@ -97,12 +99,15 @@ class ProjectManager:
             logger.info(f"[ProjectManager] Total projects fetched: {len(all_projects)}")
 
         # Process all fetched projects
+        new_projects = {}
         for project in all_projects:
             cid = project.metadata.cid
             combined = f"{cid}{project.metadata.endpoint}"
             hash_value = utils.hash256(combined)[:8]
             key = f"{cid}_{hash_value}"
-            self.projects.update({key: project})
+            new_projects[key] = project
+
+        self.projects = new_projects
 
         for cid_hash, project in self.projects.items():
             if ALLOWED_CID and project.metadata.cid not in ALLOWED_CID:
@@ -120,7 +125,7 @@ class ProjectManager:
                 await self.register_project(cid_hash, project.metadata.endpoint)
         
     def load(self):
-        projects = {}
+        projects: dict[str, ProjectConfig] = {}
         for project_dir in self.target_dir.iterdir():
             if not project_dir.is_dir():
                 continue
@@ -134,6 +139,17 @@ class ProjectManager:
                 config = json.load(f)
             projects[cid_hash] = ProjectConfig(**config)
 
+        self.projects = {cid_hash: Project(
+            enabled=True,
+            description="",
+            name="",
+            phase=ProjectPhase.NORMAL.value,
+            metadata=Metadata(
+                cid=cid_hash,
+                endpoint=config.endpoint
+            )
+        ) for cid_hash, config in projects.items()}
+
         self.projects_config.update({cid_hash: config for cid_hash, config in projects.items()})
         return self.projects_config
 
@@ -142,6 +158,16 @@ class ProjectManager:
 
     def get_projects(self) -> Dict[str, ProjectConfig]:
         return self.projects_config
+
+    def is_project_enabled(self, cid_hash: str) -> bool:
+        project = self.projects.get(cid_hash, None)
+        return True if project is not None else False
+    
+    def get_project_phase(self, cid_hash: str) -> int:
+        project = self.projects.get(cid_hash, None)
+        if project:
+            return project.phase
+        return ProjectPhase.NORMAL.value
 
     async def pull_manifest(self, cid: str) -> Dict:
         try:

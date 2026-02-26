@@ -19,7 +19,7 @@ if TYPE_CHECKING:
     from neurons.validator import Validator
 from agent.stats import Phase, TokenUsageMetrics
 from common.agent_manager import AgentManager
-from common.enums import ChallengeType, ErrorCode, FailureType
+from common.enums import ChallengeType, ErrorCode, FailureType, ProjectPhase
 from common.protocol import SyntheticNonStreamSynapse
 from common.settings import Settings
 from common.table_formatter import table_formatter
@@ -248,9 +248,13 @@ class ChallengeManager:
                     if allowed_cid_hashs_str:
                         allowed_cid_hashs = allowed_cid_hashs_str.split(",")
                         if cid_hash not in allowed_cid_hashs:
-                            logger.info(f"[ChallengeManager] - {cid_hash} Skipping project not in allowed list")
+                            logger.warning(f"[ChallengeManager] - {cid_hash} not in allowed list, skipping")
                             continue
-
+                    
+                    if not self.agent_manager.is_project_enabled(cid_hash):
+                        logger.warning(f"[ChallengeManager] - {cid_hash} not enabled, skipping")
+                        continue
+                    
                     # Retry loop: attempt to generate a valid challenge for this project
                     max_retries = int(os.getenv("CHALLENGE_GENERATION_MAX_RETRIES", 3))
                     challenge_generated = False
@@ -258,6 +262,7 @@ class ChallengeManager:
                     weight_a = self.ipc_meta_config.get("weight_a", 70)
                     weight_b = self.ipc_meta_config.get("weight_b", 30)
                     q_metrics_data = None
+                    project_phase = self.agent_manager.get_project_phase(cid_hash)
 
                     for attempt in range(max_retries):
                         challenge_id = str(uuid4())
@@ -303,6 +308,7 @@ class ChallengeManager:
                         table_formatter.create_synthetic_challenge_table(
                             round_id=self.round_id,
                             challenge_id=challenge_id,
+                            project_phase_str=utils.get_project_phase_str(project_phase),
                             cid=cid_hash,
                             question=question,
                             success=is_valid,
@@ -325,19 +331,22 @@ class ChallengeManager:
                     if not challenge_generated:
                         logger.error(f"[ChallengeManager] - {cid_hash} Failed to generate valid challenge after {max_retries} attempts")
                         await self.benchmark.add_failure(
-                            uid= self.uid,
-                            round_id= self.round_id,
-                            address= self.settings.wallet.hotkey.ss58_address,
-                            version= self.settings.version,
-                            failure_type= FailureType.GENERATE_CHALLENGE.value,
-                            cid_hash= cid_hash,
-                            error_msgs= error_msgs
+                            uid=self.uid,
+                            round_id=self.round_id,
+                            address=self.settings.wallet.hotkey.ss58_address,
+                            version=self.settings.version,
+                            failure_type=FailureType.GENERATE_CHALLENGE.value,
+                            cid_hash=cid_hash,
+                            project_phase=project_phase,
+                            error_msgs=error_msgs
                         )
-                        project_score_matrix.append([0.0] * len(uids))
+                        if project_phase != ProjectPhase.WARMUP.value:
+                            project_score_matrix.append([0.0] * len(uids))
                         continue
 
                     if skip_query_miner:
-                        project_score_matrix.append([0.0] * len(uids))
+                        if project_phase != ProjectPhase.WARMUP.value:
+                            project_score_matrix.append([0.0] * len(uids))
                         continue
 
                     # query all miner
@@ -371,15 +380,17 @@ class ChallengeManager:
                         min_latency_improvement_ratio=self.ipc_meta_config.get("min_latency_improvement_ratio", 0.2),
                         round_id=self.round_id
                     )
-                    project_score_matrix.append(zip_scores)
 
-                    # update miners counter
-                    for uid, truth_score in zip(uids, ground_truth_scores):
-                        success_count, total_count = miners_counter.get(uid, (0, 0))
-                        if truth_score >= organic_success_score_threshold:
-                            success_count += 1
-                        total_count += 1
-                        miners_counter[uid] = (success_count, total_count)
+                    if project_phase != ProjectPhase.WARMUP.value:
+                        project_score_matrix.append(zip_scores)
+                        
+                        # update miners counter
+                        for uid, truth_score in zip(uids, ground_truth_scores):
+                            success_count, total_count = miners_counter.get(uid, (0, 0))
+                            if truth_score >= organic_success_score_threshold:
+                                success_count += 1
+                            total_count += 1
+                            miners_counter[uid] = (success_count, total_count)
 
                     table_formatter.create_synthetic_miners_response_table(
                         round_id=self.round_id,
@@ -401,6 +412,7 @@ class ChallengeManager:
                         cid=cid_hash.split('_')[0],
                         challenge_type=ChallengeType.SYNTHETIC.value,
                         challenge_id=challenge_id,
+                        project_phase=project_phase,
                         question=question,
                         question_generator_model_name=self.llm_synthetic.model_name,
                         question_generator_metrics=utils.pick(
@@ -801,6 +813,7 @@ class ChallengeManager:
             while not self.event_stop.is_set():
                 await asyncio.sleep(self.refresh_agents_interval)
                 self.settings.reread()
+                logger.info(f"[ChallengeManager] refresh_agents ... ")
                 await self.agent_manager.start(pull=True, role="validator", silent=True)
         except Exception as e:
             logger.error(f"[ChallengeManager] refresh_agents error: {e}")

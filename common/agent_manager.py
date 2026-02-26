@@ -79,13 +79,24 @@ class AgentManager:
             self._init_agents()
 
     def _init_agents(self):
+        removed_agents = []
         new_agents = []
         for cid_hash, project_config in self.get_projects().items():
-            if cid_hash not in self.graphql_agent:
+            enabled = self.is_project_enabled(cid_hash)
+            if not enabled and cid_hash in self.graphql_agent:
+                removed_agents.append(cid_hash)
+                del self.graphql_agent[cid_hash]
+                continue
+
+            if enabled and cid_hash not in self.graphql_agent:
                 new_agents.append(cid_hash)
                 self.graphql_agent[cid_hash] =  GraphQLAgent(project_config)
+        
         if new_agents:
-            logger.info(f"[AgentManager] Initialized graphql_agents for projects: {new_agents}")
+            logger.info(f"[AgentManager] Created graphql_agents for projects: {new_agents}")
+        
+        if removed_agents:
+            logger.info(f"[AgentManager] Removed graphql_agents for projects: {removed_agents}")
 
     def _init_miner_agents(self):
         enable_fallback = os.getenv("ENABLE_FALL_BACK_GRAPHQL_AGENT", "false").lower() == "true"
@@ -308,9 +319,15 @@ class AgentManager:
 
     def get_projects(self):
         return self.project_manager.get_projects()
-
+    
     def get_graphql_agent(self, cid_hash: str) -> GraphQLAgent:
         return self.graphql_agent[cid_hash]
+
+    def is_project_enabled(self, cid_hash: str) -> bool:
+        return self.project_manager.is_project_enabled(cid_hash)
+
+    def get_project_phase(self, cid_hash: str) -> int:
+        return self.project_manager.get_project_phase(cid_hash)
 
     def get_miner_agent(self, cid_hash: str | None = None) -> dict | tuple[StateGraph, GraphQLAgent]:
         if cid_hash:

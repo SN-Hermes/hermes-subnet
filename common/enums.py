@@ -48,3 +48,9 @@ class RoleFlag(Enum):
 
 class FailureType(Enum):
     GENERATE_CHALLENGE = 1
+
+class ProjectPhase(Enum):
+    NORMAL = 0
+    HATCHING = 1
+    WARMUP = 2
+

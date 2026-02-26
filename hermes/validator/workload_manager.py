@@ -234,6 +234,8 @@ class WorkloadManager:
                         question = response.get_question()
                         logger.debug(f"[WorkloadManager] compute organic task({response.id}) for miner: {miner_uid}, response: {response}. question: {question}")
 
+                        project_phase = self.challenge_manager.agent_manager.get_project_phase(response.cid_hash)
+
                         success, ground_truth, ground_cost, metrics_data, model_name = await self.challenge_manager.generate_ground_truth(
                             cid_hash=response.cid_hash,
                             question=question,
@@ -263,6 +265,7 @@ class WorkloadManager:
                         table_formatter.create_workload_summary_table(
                             round_id=self.round_id,
                             challenge_id=response.id,
+                            project_phase_str=utils.get_project_phase_str(project_phase),
                             ground_truth=ground_truth,
                             uids=[miner_uid],
                             responses=[response],
@@ -278,6 +281,7 @@ class WorkloadManager:
                             version=self.V.settings.version,
                             cid=response.cid_hash.split('_')[0],
                             challenge_id=response.id,
+                            project_phase=project_phase,
                             challenge_type=ChallengeType.ORGANIC_STREAM.value,
                             question=response.get_question(),
 
