@@ -379,7 +379,7 @@ Make each capability very specific to the entities found in the schema."""
                 raise ValueError("Invalid JSON response from LLM")
             
         except Exception as e:
-            logger.warning(f"[ProjectManager] LLM analysis failed: {e}, using enhanced fallback")
+            logger.error(f"[ProjectManager] LLM analysis failed: {e}, using enhanced fallback")
         
             # Enhanced fallback analysis
             project_name = manifest.get('name', 'SubQuery Project')

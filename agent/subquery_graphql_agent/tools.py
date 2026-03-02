@@ -439,7 +439,18 @@ WORKFLOW:
 - NEVER make verification queries, think thoroughly before you make a query.
 - ALWAYS limit the return with first:10 for ALL list queries as well as in the nested queries, unless told otherwise and it is smaller.
 - For time-range queries (e.g., last 7 days, 30 days, weeks), ALWAYS limit the number of results using 'first' parameter to prevent excessive data retrieval.
-- If first query returns empty/insufficient → Analyze WHY, then make ONE logical adjusted query.
+- ⚠️ ZERO/EMPTY RESULTS HANDLING:
+  * If query executes successfully (✅) AND returns numeric 0, empty list [], or null → Ask yourself: "Does this answer the user's question?"
+  * Examples of VALID zero/empty results (DO NOT RETRY):
+    - "What's the total X?" → sum: 0 (means legitimately no spending)
+    - "How many items?" → count: 0 (means legitimately zero items)
+    - "List all X" → [] (means legitimately no X exists)
+    - "Get X by ID" → null (means X with this ID doesn't exist)
+  * Examples of INVALID results that need ONE retry (query technical issues):
+    - Query validation/execution error (❌ symbols in response)
+    - Wrong entity/field name (schema mismatch)
+    - Incorrect filter syntax
+  * NEVER retry the EXACT same query twice - if first execution succeeds (✅), that's the answer!"
 """
 
     if is_synthetic:

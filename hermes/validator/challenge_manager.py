@@ -221,17 +221,26 @@ class ChallengeManager:
                 uids = []
                 hotkeys = []
                 ips = []
+                coldkeys = []
                 axons: list[str] = []
-                seen_ips = {}  # ip -> first uid that used it
+                seen_ips = {}   # ip -> first uid that used it
+                seen_coldkeys = {}  # coldkey -> first uid that used it
+                
                 for uid, miner_info in miners_list:
                     if uid != self.uid:
                         uids.append(uid)
                         hotkeys.append(miner_info["hotkey"])
                         axons.append(miner_info["axon"])
+                        
                         ip = miner_info.get("ip")
                         ips.append(ip)
                         if ip and ip not in seen_ips:
                             seen_ips[ip] = uid
+
+                        coldkey = miner_info.get("coldkey")
+                        coldkeys.append(coldkey)
+                        if coldkey and coldkey not in seen_coldkeys:
+                            seen_coldkeys[coldkey] = uid
 
                 skip_query_miner = os.getenv("SKIP_QUERY_MINER", "false").lower() == "true"
 
@@ -261,6 +270,7 @@ class ChallengeManager:
                     error_msgs = []
                     weight_a = self.ipc_meta_config.get("weight_a", 70)
                     weight_b = self.ipc_meta_config.get("weight_b", 30)
+                    multi_coldkey_penalty = self.ipc_meta_config.get("multi_coldkey_penalty", 0.3)
                     q_metrics_data = None
                     project_phase = self.agent_manager.get_project_phase(cid_hash)
 
@@ -292,7 +302,7 @@ class ChallengeManager:
                             logger.warning(f"[ChallengeManager] - {cid_hash} Failed to generate question (attempt {attempt + 1}/{max_retries})")
                             error_msgs.append(f"(round: {self.round_id}, attempt: {attempt + 1}/{max_retries}, {cid_hash}) {error}")
                             continue
-                        logger.info(f"[ChallengeManager] - {cid_hash} Selected block height: {block_cache[cid_hash]}")
+                        logger.info(f"[ChallengeManager] - {cid_hash} Selected block height: {block_cache[cid_hash]}. coldkey_penalty: {multi_coldkey_penalty}")
 
                         success, ground_truth, ground_cost, metrics_data, model_name = await self.generate_ground_truth(
                             cid_hash=cid_hash,
@@ -382,6 +392,14 @@ class ChallengeManager:
                     )
 
                     if project_phase != ProjectPhase.WARMUP.value:
+                        # Apply multi-coldkey penalty
+                        for idx, (uid, coldkey) in enumerate(zip(uids, coldkeys)):
+                            if coldkey and coldkey in seen_coldkeys:
+                                first_uid = seen_coldkeys[coldkey]
+                                if uid != first_uid:
+                                    zip_scores[idx] *= multi_coldkey_penalty
+                                    logger.warning(f"[ChallengeManager] Applied multi-coldkey penalty to UID {uid} (coldkey: {coldkey}, first_uid: {first_uid}, penalty: {multi_coldkey_penalty})")
+
                         project_score_matrix.append(zip_scores)
                         
                         # update miners counter
