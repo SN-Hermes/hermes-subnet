@@ -171,9 +171,10 @@ class Validator(BaseNeuron):
             dendrite: "bt.Dendrite",
             uid: int,
         ) -> dict[str, any]:
+            axon: bt.AxonInfo | None = None
             try:
                 synapse = CapacitySynapse()
-                axon: bt.AxonInfo = metagraph.axons[uid]
+                axon = metagraph.axons[uid]
                 ip = axon.ip
                 r = await dendrite.forward(
                     axons=axon,
@@ -187,6 +188,7 @@ class Validator(BaseNeuron):
                         "uid": uid,
                         "projects": r.response.get("capacity", {}).get("projects", []),
                         "hotkey": r.axon.hotkey,
+                        "coldkey": axon.coldkey,
                         "ip": ip,
                         "axon": axon.to_string()
                     }
@@ -199,8 +201,9 @@ class Validator(BaseNeuron):
                 "uid": uid,
                 "projects": [],
                 "hotkey": "",
+                "coldkey": "",
                 "ip": ip,
-                "axon": axon.to_string()
+                "axon": axon.to_string() if axon else ""
             }
 
         while not event_stop.is_set():
@@ -230,6 +233,7 @@ class Validator(BaseNeuron):
                 for r in responses:
                     ipc_miners_dict[r["uid"]] = {
                         "hotkey": r["hotkey"],
+                        "coldkey": r["coldkey"],
                         "projects": r["projects"],
                         "ip": r["ip"],
                         "axon": r["axon"]

@@ -24,7 +24,7 @@ async def query_single_miner(
     dendrite: HighConcurrencyDendrite,
     uid: int,
     hotkey: str,
-    axon: bt.AxonInfo,
+    axon: bt.AxonInfo | None,
     is_ip_duplicated: bool,
     cid_hash: str,
     challenge_id: str,
@@ -62,6 +62,10 @@ async def query_single_miner(
             r.dendrite = bt.TerminalInfo(status_code=200)
             r.status_code = ErrorCode.NOT_HEALTHY.value
             r.error = "Miner is not healthy"
+        elif axon is None:
+            r.dendrite = bt.TerminalInfo(status_code=200)
+            r.status_code = ErrorCode.CHECK_MINER_AXON_NONE.value
+            r.error = "Miner axon is not available"
         elif is_ip_duplicated:
             r.dendrite = bt.TerminalInfo(status_code=200)
             r.status_code = ErrorCode.DUPLICATED_IP.value
@@ -119,7 +123,7 @@ async def query_miner_batch(
                 dendrite=dendrite,
                 uid=uid,
                 hotkey=hotkey,
-                axon=bt.AxonInfo.from_string(axon),
+                axon=bt.AxonInfo.from_string(axon) if axon else None,
                 is_ip_duplicated=is_ip_duplicated,
                 cid_hash=cid_hash,
                 challenge_id=challenge_id,
