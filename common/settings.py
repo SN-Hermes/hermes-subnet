@@ -136,6 +136,22 @@ class Settings:
             else:
                 self._cpu_count = utils.get_available_cpu_count()
         return self._cpu_count
+    
+    @property
+    def is_running_mock_mode(self) -> bool:
+        return os.environ.get("RUNNING_MODE", "production") == "mock"
+
+    @classmethod
+    def from_env_file(cls, env_file: str) -> "Settings":
+        instance = cls()
+        try:
+            dotenv.load_dotenv(env_file)
+            instance._env_file = env_file
+            logger.info(f"Loaded {env_file} file")
+        except Exception as e:
+            logger.error(f"from_env_file failed to load {env_file} file: {e}")
+
+        return instance
 
     def miners(self) -> Tuple[List[int], List[str]]:
         uids = []

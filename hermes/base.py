@@ -22,14 +22,27 @@ class BaseNeuron(ABC):
     def __init__(self):
         self.settings = settings
 
-        self.uid = self.settings.metagraph.hotkeys.index(
-            self.settings.wallet.hotkey.ss58_address
-        )
+        if self.settings.is_running_mock_mode:
+            self.uid = 300
+        else:
+            self.uid = self.settings.metagraph.hotkeys.index(
+                self.settings.wallet.hotkey.ss58_address
+            )
 
     def start(self, flag: RoleFlag):
+        external_ip = self.settings.external_ip
+
+        if flag == RoleFlag.MINER and self.settings.is_running_mock_mode:
+            msg = (
+                f"running mock mode {self.role} endpoint {external_ip}:{self.settings.port} "
+                f"on network: {self.settings.subtensor.network} "
+                f"with netuid: {self.settings.netuid} uid:{self.uid}"
+            )
+            logger.info(msg)
+            return
+        
         self.check_registered()
 
-        external_ip = self.settings.external_ip
         serve_success = serve_extrinsic(
           subtensor=self.settings.subtensor,
           wallet=self.settings.wallet,

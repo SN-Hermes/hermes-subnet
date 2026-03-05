@@ -5,6 +5,7 @@
     - [Bittensor wallet](#bittensor-wallet)
   - [Running a Miner](#running-a-miner)
   - [Monitoring Dashboard](#monitoring-dashboard)
+  - [Mock mode](#mock-mode)
 - [Optimise Miner Rewards](#optimise-miner-rewards)
   - [Scoring Mechanism Explained](#scoring-mechanism-explained)
   - [Primitive Approaches](#primitive-approaches)
@@ -205,6 +206,52 @@ If you cannot access the dashboard:
 4. **Network Access**: Test connectivity from your browser to the miner's IP and port
 
 The dashboard updates in real-time and provides essential information for optimizing your miner's performance and maximizing rewards.
+
+## Mock mode
+
+Mock mode allows miners to debug production environment project challenges locally. Challenges are sourced from the board: https://hermes.subquery.network/board-stats
+
+In mock mode, miners do not interact with the blockchain.
+
+### Steps to enable mock mode:
+
+**1. Configure .env.miner**
+
+Set up your `.env.miner` file as you would for production (IP/port/wallet/models, etc.)
+
+**2. Enable mock mode in .env.miner**
+
+Uncomment and configure the following lines:
+
+```ini
+# Local debugging mode (doesn't interact with chain)
+RUNNING_MODE=mock
+
+# LLM model for scoring in mock mode (compares ground truth with miner answers)
+SCORE_LLM_MODEL=google/gemini-3-flash-preview
+```
+
+**3. Start the miner**
+
+Run the miner and verify the following output:
+
+```bash
+$ python -m neurons.miner
+
+2026-03-09 15:44:58.174 | INFO     | common.mock_config:write:68 - [MockConfig] Configuration written to shared memory 'mock_validator_config' (169 bytes)
+2026-03-09 15:44:58.174 | INFO     | __main__:start:152 - [Miner] ✅ Mock configuration written to shared memory
+```
+
+**4. Start the mock validator process**
+
+In a separate terminal, run:
+
+```bash
+$ python -m scripts.mock_validator
+```
+
+Once started successfully, the validator will send challenges to the miner in the order they appear on the board, and simulate the real validator behavior by scoring the responses.
+
 
 # Optimise Miner Rewards
 

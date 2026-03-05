@@ -320,8 +320,8 @@ class AgentManager:
     def get_projects(self):
         return self.project_manager.get_projects()
     
-    def get_graphql_agent(self, cid_hash: str) -> GraphQLAgent:
-        return self.graphql_agent[cid_hash]
+    def get_graphql_agent(self, cid_hash: str) -> GraphQLAgent | None:
+        return self.graphql_agent.get(cid_hash, None)
 
     def is_project_enabled(self, cid_hash: str) -> bool:
         return self.project_manager.is_project_enabled(cid_hash)
