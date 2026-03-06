@@ -24,8 +24,8 @@ class ScorerManager:
     score_state_path: str | Path
 
     def __init__(self, llm_score: ChatOpenAI, score_state_path: str | Path = None, ipc_meta_config: dict = None):
-        self.overall_ema = EMAUpdater(alpha=0.7)
-        self.synthetic_ema = EMAUpdater(alpha=0.7)
+        self.overall_ema = EMAUpdater(alpha=0.5)
+        self.synthetic_ema = EMAUpdater(alpha=0.5)
         self.llm_score = llm_score
         self.score_state_path = score_state_path
         self.ipc_meta_config = ipc_meta_config
@@ -131,7 +131,8 @@ class ScorerManager:
         hotkeys: List[str],
         project_score_matrix: List[List[float]],
         workload_score: List[float] | None,
-        challenge_id: str = ""
+        challenge_id: str = "",
+        ema_score_alpha: float | None = None
     ):
         logger.debug(f"[ScorerManager] - {challenge_id} update_scores called with uids: {uids}, hotkeys: {hotkeys}, project_score_matrix: {project_score_matrix}, workload_score: {workload_score}")
         if not uids or not project_score_matrix:
@@ -139,7 +140,7 @@ class ScorerManager:
 
         suspicious_uids = self.ipc_meta_config.get("suspicious_uids", []) if self.ipc_meta_config else []
         synthetic_scores = np.array(project_score_matrix).sum(axis=0).tolist()
-        self.synthetic_ema.update(uids, hotkeys, synthetic_scores, suspicious_uids)
+        self.synthetic_ema.update(uids, hotkeys, synthetic_scores, suspicious_uids, ema_score_alpha)
 
         if workload_score is not None:
             merged = project_score_matrix + [workload_score]
@@ -149,7 +150,7 @@ class ScorerManager:
         score_matrix = np.array(merged)
         score_matrix = score_matrix.sum(axis=0)
         
-        new_scores = self.overall_ema.update(uids, hotkeys, score_matrix.tolist(), suspicious_uids)
+        new_scores = self.overall_ema.update(uids, hotkeys, score_matrix.tolist(), suspicious_uids, ema_score_alpha)
         self.save_state(new_scores)
         logger.debug(f"[ScorerManager] - {challenge_id} uids: {uids}, project_score_matrix: {project_score_matrix}, workload_score: {workload_score}, merged: {merged}, score_matrix: {score_matrix.tolist()}, updated_ema_scores: {new_scores}")
         return new_scores

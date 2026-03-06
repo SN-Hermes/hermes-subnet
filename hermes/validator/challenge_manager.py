@@ -276,6 +276,7 @@ class ChallengeManager:
                     weight_a = self.ipc_meta_config.get("weight_a", 70)
                     weight_b = self.ipc_meta_config.get("weight_b", 30)
                     multi_coldkey_penalty = self.ipc_meta_config.get("multi_coldkey_penalty", 1)
+                    ema_score_alpha = self.ipc_meta_config.get("ema_score_alpha", 0.5)
                     q_metrics_data = None
                     project_phase = self.agent_manager.get_project_phase(cid_hash)
 
@@ -505,7 +506,8 @@ class ChallengeManager:
                     hotkeys,
                     project_score_matrix,
                     workload_score,
-                    challenge_id=challenge_id
+                    challenge_id=challenge_id,
+                    ema_score_alpha=ema_score_alpha
                 )
                 self.ipc_synthetic_score[0] = self.scorer_manager.get_last_synthetic_scores()
                 self.ipc_synthetic_score[1] = miners_counter
