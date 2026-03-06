@@ -3,6 +3,7 @@ Multi-process miner query module for ChallengeManager.
 Handles parallel querying of miners using multiprocessing to improve performance.
 """
 import asyncio
+from datetime import datetime
 import multiprocessing as mp
 import os
 import time
@@ -56,7 +57,8 @@ async def query_single_miner(
     )
     r.status_code = ErrorCode.FORWARD_SYNTHETIC_FAILED.value
     r.error = "Unknown error"
-    
+    now = int(datetime.now().timestamp())
+
     try:
         if not hotkey:
             r.dendrite = bt.TerminalInfo(status_code=200)
@@ -91,6 +93,7 @@ async def query_single_miner(
     finally:
         r.uid = uid
         r.elapsed_time = utils.fix_float(time.perf_counter() - query_start_time)
+        r.forward_start_time = now
         return r
 
 

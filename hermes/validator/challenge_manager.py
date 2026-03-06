@@ -459,7 +459,8 @@ class ChallengeManager:
                         ground_input_tokens=metrics_data.get("input_tokens", 0),
                         ground_input_cache_read_tokens=metrics_data.get("input_cache_read_tokens", 0),
                         ground_output_tokens=metrics_data.get("output_tokens", 0),
-                        
+                        block_height=str(block_cache[cid_hash]),
+
                         miners_answer=[
                             {
                                 "uid": uid,
@@ -475,6 +476,8 @@ class ChallengeManager:
                                 "inputTokens": resp.usage_info.get("input_tokens", 0) if resp.usage_info else 0,
                                 "inputCacheReadTokens": resp.usage_info.get("input_cache_read_tokens", 0) if resp.usage_info else 0,
                                 "outputTokens": resp.usage_info.get("output_tokens", 0) if resp.usage_info else 0,
+                                "forwardStartTime": resp.forward_start_time or 0,
+                                "recvStartTime": resp.recv_start_time or 0,
                                 "toolCalls": [
                                     parsed for t in resp.usage_info.get("tool_calls", []) if (parsed := utils.safe_json_loads(t)) is not None
                                 ] if resp.usage_info else [],

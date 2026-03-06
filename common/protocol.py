@@ -39,6 +39,8 @@ class BaseSynapse(bt.Synapse):
     status_code: int | None = 200
     error: str | None = None
     elapsed_time: float | None = 0.0
+    forward_start_time: int | None = 0
+    recv_start_time: int | None = 0
 
     miner_model_name: str | None = ''
     graphql_agent_model_name: str | None = ''

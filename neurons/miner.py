@@ -17,6 +17,7 @@
 # DEALINGS IN THE SOFTWARE.
 
 import asyncio
+from datetime import datetime
 import json
 import os
 from pathlib import Path
@@ -379,7 +380,11 @@ class Miner(BaseNeuron):
         })
 
     async def forward_synthetic_non_stream(self, task: SyntheticNonStreamSynapse) -> SyntheticNonStreamSynapse:
+        now = int(datetime.now().timestamp())
         log = logger.bind(source=task.dendrite.hotkey)
+        log.info(f"[Miner] receiving synthetic task: {task.id} at {now}")
+
+        task.recv_start_time = now
         await self._handle_task(task, log)
         return task
 

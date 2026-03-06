@@ -136,6 +136,7 @@ class BenchMark:
         ground_input_tokens: int,
         ground_input_cache_read_tokens: int,
         ground_output_tokens: int,
+        block_height: str,
         miners_answer: list[dict[str, any]],
     ):
         """
@@ -172,6 +173,7 @@ class BenchMark:
             "groundInputTokens": ground_input_tokens,
             "groundInputCacheReadTokens": ground_input_cache_read_tokens,
             "groundOutputTokens": ground_output_tokens,
+            "blockHeight": block_height,
             "minersAnswer": miners_answer,
         }
 
