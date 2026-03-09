@@ -39,6 +39,19 @@ class ProjectListResponse(BaseModel):
     message: str
     data: ProjectData
 
+class ChallengeData(BaseModel):
+    cid: str
+    cid_hash: str
+    challenge_type: int
+    challenge_id: str
+    project_phase: int
+    question: str
+
+class ChallengeResponse(BaseModel):
+    nextUpdate: int
+    now: int
+    boardChallenges: List[ChallengeData]
+
 ALLOWED_CID = []
 
 class ProjectManager:
@@ -223,7 +236,6 @@ class ProjectManager:
         except Exception as e:
             raise RuntimeError(f"[ProjectManager] Failed to pull schema: {str(e)}")
 
-
     async def register_project(self, cid_hash: str, endpoint: str) -> ProjectConfig:
         try:
             # Project doesn't exist locally, need to analyze with LLM
@@ -257,7 +269,6 @@ class ProjectManager:
             return config
         except Exception as e:
             raise RuntimeError(f"[ProjectManager] Failed to register project {cid_hash} with endpoint {endpoint}: {str(e)}")
-
 
     async def analyze_project_with_llm(self, manifest: dict, schema_content: str, llm=None) -> dict:
         """
@@ -411,7 +422,6 @@ Make each capability very specific to the entities found in the schema."""
                 ]
             }
 
-    
     def _load_existing_project(self, cid_hash: str) -> ProjectConfig | None:
         """Load existing project configuration from local disk if it exists."""
         if self.target_dir is None:
@@ -446,3 +456,20 @@ Make each capability very specific to the entities found in the schema."""
         file = dir / "config.json"
         with open(file, "w") as f:
             json.dump(asdict(config), f, indent=2)
+
+    async def pull_mock_challenges(self, page: int = 1):
+        board_url = os.environ.get('BOARD_SERVICE')
+        if not board_url:
+            logger.error("[ProjectManager] BOARD_SERVICE environment variable is not set.")
+            sys.exit(1)
+        
+        async with aiohttp.ClientSession() as session:
+            async with session.get(
+                f"{board_url}/stats/board-challenges",
+                params={"exclude_miners": "true"},
+                timeout=aiohttp.ClientTimeout(total=15.0)
+            ) as resp:
+                resp.raise_for_status()
+                response_data = await resp.json()
+                parsed = ChallengeResponse(**response_data)
+                return parsed.boardChallenges
