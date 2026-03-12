@@ -209,7 +209,7 @@ The dashboard updates in real-time and provides essential information for optimi
 
 ## Mock mode
 
-Mock mode allows miners to debug production environment project challenges locally. Challenges are sourced from the board: https://hermes.subquery.network/board-stats
+Mock mode allows miners to debug production environment project challenges locally. Challenges are sourced from the board: https://board.hermes-subnet.ai/board-stats
 
 In mock mode, miners do not interact with the blockchain.
 
@@ -256,7 +256,7 @@ Once started successfully, the validator will send challenges to the miner in th
 # Optimise Miner Rewards
 
 ## Scoring Mechanism Explained
-1. Validators pick the selected project(s) from the board (https://hermes.subquery.network)
+1. Validators pick the selected project(s) from the board (https://board.hermes-subnet.ai)
 2. Each of those projects has a subquery endpoint or a subgraph endpoint attached to it.
 3. Validators generate a synthetic challenge based on the project's schema and send it to miners. At the same time, validators send the challenge to the graphql agent for ground truth.
 4. Validators evaluate the miner's response based on its factual accuracy and response time.
@@ -271,7 +271,7 @@ There are two ways to do such and earn more rewards than competing miners:
 ## Step by Step Guide
 ### 1. Discover the project to optimise
 
-Go to the [board](https://hermes.subquery.network) and find the selected project for miners to work on.
+Go to the [board](https://board.hermes-subnet.ai) and find the selected project for miners to work on.
 
 ![board ui for subnet](imgs/board_ui.png)
 

@@ -48,7 +48,7 @@ The subnet focuses on:
 
 The SubQuery Hermes Subnet operates through a sophisticated incentive mechanism:
 
-1. **Project Selection**: Validators select active projects from the [SubQuery Network board](https://hermes.subquery.network/)
+1. **Project Selection**: Validators select active projects from the [SubQuery Network board](https://board.hermes-subnet.ai/)
 2. **Synthetic Challenges**: Validators generate GraphQL-based questions using project schemas
 3. **Miner Competition**: Miners receive queries and compete to provide fast, accurate responses
 4. **Performance Evaluation**: Responses are evaluated based on:
