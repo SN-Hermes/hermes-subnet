@@ -90,7 +90,7 @@ class QuestionGenerator:
                 temp_executor = create_react_agent(
                     model=llm,
                     tools=tools,
-                    prompt=None,
+                    prompt="",
                 )
                 response = await temp_executor.ainvoke(
                     { "messages": [{"role": "user", "content": prompt}] },
@@ -98,7 +98,7 @@ class QuestionGenerator:
                         "recursion_limit": 12,
                     },
                 )
-                question = response.get('messages', [])[-1].content
+                question = response.get('messages', [])[-1].content.strip()
                 d = None
                 if token_usage_metrics is not None:
                     d = token_usage_metrics.parse(
