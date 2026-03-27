@@ -97,7 +97,9 @@ class ChallengeManager:
         synthetic_model_name = synthetic_model_name or os.getenv("LLM_MODEL", "google/gemini-3-flash-preview")
         self.llm_synthetic = ChatOpenAI(
             model=synthetic_model_name,
-            temperature=1
+            temperature=1,
+            timeout=120,
+            max_retries=3,
         )
 
         score_model_name = score_model_name or os.getenv("SCORE_LLM_MODEL", "google/gemini-3-flash-preview")
