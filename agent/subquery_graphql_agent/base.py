@@ -45,7 +45,9 @@ class GraphQLSource:
         headers: Optional[Dict[str, str]] = None,
         schema_cache_ttl: int = 3600,
         node_type: Optional[str] = None,
-        manifest: Optional[Dict[str, Any]] = None
+        manifest: Optional[Dict[str, Any]] = None,
+
+        full_schema: Optional[str] = None
     ):
         """
         Initialize GraphQL database connection.
@@ -62,6 +64,7 @@ class GraphQLSource:
         self.headers = headers or {}
         self.schema_cache_ttl = schema_cache_ttl
         self.entity_schema = entity_schema
+        self.full_schema = full_schema
         self.node_type = node_type
         self.manifest = manifest or {}
         self._schema_cache: Optional[Dict] = None
@@ -82,6 +85,13 @@ class GraphQLSource:
                 if thegraph_token and "Authorization" not in headers:
                     headers["Authorization"] = f"Bearer {thegraph_token}"
                     logger.info("Added THEGRAPH_API_TOKEN to Authorization header to fetch schema")
+            
+            elif self.node_type == GraphqlProvider.CODEX:
+                codex_token = os.getenv("CODEX_API_TOKEN")
+                if codex_token and "Authorization" not in headers:
+                    headers["Authorization"] = f"{codex_token}"
+                    logger.info("Added CODEX_API_TOKEN to Authorization header to fetch schema")
+
             introspection_result = await fetch_graphql_schema(
                 self.endpoint, 
                 include_arg_descriptions=True,
@@ -114,7 +124,13 @@ class GraphQLSource:
             if thegraph_token and "Authorization" not in headers:
                 headers["Authorization"] = f"Bearer {thegraph_token}"
                 logger.info("Added THEGRAPH_API_TOKEN to Authorization header to execute query")
-        
+
+        elif self.node_type == GraphqlProvider.CODEX:
+            codex_token = os.getenv("CODEX_API_TOKEN")
+            if codex_token and "Authorization" not in headers:
+                headers["Authorization"] = f"{codex_token}"
+                logger.info("Added CODEX_API_TOKEN to Authorization header to execute query")
+
         async with aiohttp.ClientSession() as session:
             async with session.post(
                 self.endpoint,
@@ -172,8 +188,8 @@ class GraphQLToolkit(BaseToolkit):
                 graphql_source=self.graphql_source,
                 node_type=self.graphql_source.node_type
             ),
-            GraphQLTypeDetailTool(graphql_source=self.graphql_source),
-            GraphQLQueryValidatorAndExecutedTool(graphql_source=self.graphql_source),
+            GraphQLTypeDetailTool(graphql_source=self.graphql_source, node_type=self.graphql_source.node_type),
+            GraphQLQueryValidatorAndExecutedTool(graphql_source=self.graphql_source, node_type=self.graphql_source.node_type),
             # GraphQLQueryValidatorTool(graphql_source=self.graphql_source),
             # GraphQLExecuteTool(graphql_source=self.graphql_source)
         ]
@@ -190,6 +206,7 @@ class ProjectConfig:
     cid: str
     endpoint: str
     schema_content: str
+    full_schema_content: Optional[str] = None
     cid_hash: Optional[str] = None
     node_type: str = GraphqlProvider.UNKNOWN
     manifest: Dict[str, Any] = None
@@ -232,17 +249,13 @@ class GraphQLAgent:
             # extra_body={"thinking": {"type": "disabled"}},
         )
 
-        # Create tools with node type information and authorization header
-        headers = {}
-        if config.authorization:
-            headers["Authorization"] = config.authorization
-
         toolkit = create_graphql_toolkit(
             config.endpoint,
             config.schema_content,
-            headers=headers if headers else None,
+            headers=None,
             node_type=config.node_type,
-            manifest=config.manifest
+            manifest=config.manifest,
+            full_schema=config.full_schema_content
         )
         self.tools = toolkit.get_tools()
 
@@ -254,7 +267,9 @@ class GraphQLAgent:
         prompt = create_system_prompt(
             domain_name=self.config.domain_name,
             domain_capabilities=self.config.domain_capabilities,
-            decline_message=self.config.decline_message
+            decline_message=self.config.decline_message,
+            is_synthetic=True,
+            node_type=self.config.node_type
         )
 
         # Create agent with system message
@@ -272,7 +287,6 @@ class GraphQLAgent:
             is_synthetic: Whether this is a synthetic challenge (affects domain filtering behavior)
             block_height: The block height for time-travel queries
         """
-        block_rule = get_block_rule_prompt(block_height, self.config.node_type)
 
         # Create appropriate system prompt based on query type
         prompt = create_system_prompt(
@@ -280,6 +294,7 @@ class GraphQLAgent:
             domain_capabilities=self.config.domain_capabilities,
             decline_message=self.config.decline_message,
             is_synthetic=is_synthetic,
+            node_type=self.config.node_type
         )
 
         # Create a temporary agent with the appropriate prompt
@@ -289,12 +304,18 @@ class GraphQLAgent:
             prompt=prompt,
         )
 
+        block_rule = ""
+        messages = [
+            {"role": "user", "content": question}
+        ]
+
+        if self.config.node_type != GraphqlProvider.CODEX:
+            block_rule = get_block_rule_prompt(block_height, self.config.node_type)
+            messages.insert(0, {"role": "system", "content": block_rule})
+
         response = await temp_executor.ainvoke(
             {
-                "messages": [
-                    {"role": "system", "content": block_rule},
-                    {"role": "user", "content": question}
-                ],
+                "messages": messages
             },
             config={
                 "configurable": {
@@ -412,6 +433,7 @@ class GraphQLAgent:
 def create_graphql_toolkit(
     endpoint: str,
     entity_schema: str,
+    full_schema: Optional[str] = None,
     headers: Optional[Dict[str, str]] = None,
     llm: Optional[BaseLanguageModel] = None,
     node_type: Optional[str] = None,
@@ -434,6 +456,7 @@ def create_graphql_toolkit(
     graphql_source = GraphQLSource(
         endpoint=endpoint, 
         entity_schema=entity_schema, 
+        full_schema=full_schema,
         headers=headers,
         node_type=node_type,
         manifest=manifest

@@ -6,7 +6,7 @@ from typing import Optional, Type, Dict, Any, Annotated, TYPE_CHECKING
 from pydantic import BaseModel, Field, ConfigDict
 from loguru import logger
 import graphql
-from graphql import build_client_schema, validate
+from graphql import build_client_schema, build_schema, validate
 from langchain_core.tools import BaseTool, InjectedToolArg
 from langchain_core.runnables import RunnableConfig
 from langchain_core.callbacks import CallbackManagerForToolRun, AsyncCallbackManagerForToolRun
@@ -199,6 +199,7 @@ class GraphQLSchemaInfoTool(BaseTool):
 ✅ { tokens(where: { symbol_starts_with_nocase: "uni" }) { id, symbol, name } }
 ✅ { positions(where: { owner_not: "0x0000", liquidity_gt: "0" }) { id, owner, liquidity } }
 """
+        
         elif self._node_type == GraphqlProvider.SUBQL:
             return """
 📋 POSTGRAPHILE v4 INFERENCE RULES:
@@ -331,7 +332,10 @@ class GraphQLSchemaInfoTool(BaseTool):
 ✅ { indexers { groupedAggregates(groupBy: [PROJECT_ID]) { keys, sum { totalReward }, distinctCount { id } } } }
 ✅ { rewards { groupedAggregates(groupBy: [ERA, INDEXER_ID], having: { era: { greaterThan: 100 } }) { keys, sum { amount } } } }
 """
-
+        
+        elif self._node_type == GraphqlProvider.CODEX:
+             return ""
+        
         raise NotImplementedError("PostGraphile rules not implemented for this node type.")
 
     def _run(
@@ -362,7 +366,8 @@ class GraphQLSchemaInfoTool(BaseTool):
                 return self._generate_thegraph_info(schema_content)
             elif self._node_type == GraphqlProvider.SUBQL:
                 return self._generate_subql_info(schema_content)
-            
+            elif self._node_type == GraphqlProvider.CODEX:
+                return self._generate_codex_info(schema_content)
         except Exception as e:
             return f"Error reading schema info: {str(e)}"
 
@@ -400,12 +405,28 @@ DO NOT call graphql_schema_info again - everything needed is above."""
         """Generate The Graph-specific schema information."""
         return create_thegraph_schema_info_content(schema_content, self.postgraphile_rules)
 
+    def _generate_codex_info(self, schema_content: str) -> str:
+        return f"""📖 CODEX GRAPHQL API SCHEMA & RULES:
+
+🔍 CODEX SUPPORTED QUERIES:
+{schema_content}
+
+💡 NOW USE THE SUPPORTED QUERIES ABOVE TO:
+1. Choose the appropriate query for your data needs
+2. Construct filters using the correct format (v1 or v2 based on query type)
+3. Apply appropriate network IDs for queries
+4. Use offset-based pagination for large result sets
+5. Validate the query, then execute it
+
+DO NOT call graphql_schema_info again - everything needed is above."""
+
 def create_system_prompt(
     domain_name: str,
     domain_capabilities: list,
     decline_message: str,
     is_synthetic: bool = False,
     extra_instructions: str | None = None,
+    node_type: str | None = None
 ) -> str:
     """
     Create a system prompt for langgraph GraphQL agent.
@@ -421,6 +442,51 @@ def create_system_prompt(
     """
     capabilities_text = '\n'.join([f"- {cap}" for cap in domain_capabilities])
     
+    codex_intructions = """
+🚨🚨🚨 ABSOLUTE REQUIREMENT - READ THIS FIRST 🚨🚨🚨
+
+YOU ARE FORBIDDEN TO CONSTRUCT ANY QUERY WITHOUT CALLING graphql_type_detail FIRST!
+
+THE SCHEMA IN graphql_schema_info IS INCOMPLETE - IT ONLY SHOWS QUERY NAMES, NOT FIELD DETAILS!
+IF YOU CONSTRUCT A QUERY WITHOUT CALLING graphql_type_detail, THE QUERY WILL BE INVALID!
+
+MANDATORY PROCESS:
+1. Read graphql_schema_info → Know which queries exist
+2. Call graphql_type_detail for ALL types you need → Get EXACT field names
+3. Construct query using ONLY field names from graphql_type_detail → Query will be valid
+
+⚠️ CRITICAL FOR CODEX:
+- ALWAYS call graphql_type_detail BEFORE constructing ANY query to get exact type definitions
+- The query-only schema in graphql_schema_info lacks field details - using it directly leads to INVALID queries
+- For EACH query you plan to make, first call graphql_type_detail with the return type name(s)
+- Example: If you want to call filterTokens, first call graphql_type_detail with type_names: ["TokenFilterConnection", "Token"]
+- Use the returned type definition to construct valid queries with correct fields and arguments
+- Queries generated need to be valid graphql query with curly braces and all, not pseudo-code or partial queries.
+
+🚫 ABSOLUTELY FORBIDDEN - FIELD NAME MODIFICATION:
+- DO NOT paraphrase, rephrase, or "improve" field names from type definitions
+- DO NOT add suffixes like "Current", "Value", "Amount" to field names
+- DO NOT convert between naming conventions (camelCase, snake_case, etc.)
+- COPY field names EXACTLY character-by-character from graphql_type_detail results
+- Example: If type shows "lowestSale", use "lowestSale" (NOT "lowestSaleCurrent", "lowest_sale", "lowestSaleValue")
+- Example: If type shows "stats24h", use "stats24h" (NOT "stats24H", "stats_24h", "dailyStats")
+
+🚫 ABSOLUTELY FORBIDDEN - ASSUMING PARAMETER NAMES:
+- DO NOT assume argument names like "first", "offset", "where" based on GraphQL conventions
+- ALWAYS check the ACTUAL argument names from graphql_type_detail
+- Example: CODEX uses "limit" NOT "first", uses enum values NOT strings
+- Example: rankings parameter expects ENUM value (liquidity) NOT string ("liquidity")
+
+📊 SORTING IS MANDATORY FOR LIST QUERIES:
+- Codex queries ALWAYS have limited results (default: 10)
+- ALWAYS add proper sorting to ensure the MOST RELEVANT results are returned
+- Without sorting, you may miss the actual data the user is looking for
+- Sorting with `rankings` parameter is ONLY available on `filter*` queries (e.g., filterPairs, filterPools, filterTokens)
+- Syntax: `filterPairs(rankings: {attribute: <ENUM_VALUE>, direction: ASC|DESC}) { ... }`
+- When asking for "top", "best", "highest", "lowest" - sorting is REQUIRED
+- When asking for recent data - sort by timestamp DESC
+"""
+
     workflow = """
 WORKFLOW:
 1. Start with graphql_schema_info to understand available entities and query patterns.
@@ -434,7 +500,90 @@ WORKFLOW:
    - If NO → Only then consider if a second query is truly necessary
 6. Provide clear, user-friendly summaries of the results.
 """
-    critical_rules = """
+
+    codex_workflow = """
+WORKFLOW:
+🚨 STOP! Before Step 1, understand this:
+   graphql_schema_info shows query NAMES only (e.g., "filterTokens exists")
+   graphql_type_detail shows query DETAILS (e.g., "filterTokens uses 'limit' not 'first', returns 'results' not 'nodes'")
+   YOU MUST CALL graphql_type_detail BEFORE constructing ANY query!
+
+1. 📋 ANALYZE AVAILABLE QUERIES:
+   - Carefully read the available queries from graphql_schema_info
+   - Analyze which query(ies) can answer the user's question
+   - Consider query parameters, filters, and return types
+   - Choose the most appropriate query for the task
+   ⚠️ BUT DO NOT construct query yet - you don't have field details!
+
+2. 🔍 GET TYPE DEFINITIONS (MANDATORY - NO GUESSING):
+   ⚠️ CRITICAL: You CANNOT construct a query until you have called graphql_type_detail for ALL types involved
+   
+   - Step 2.1: Identify ALL types needed for the query
+     * Return type from the chosen query
+     * All nested types you plan to query
+     * Argument input types (for rankings, filters, etc.)
+     Example: If querying "filterTokens" and need token details:
+       → Need types: ["TokenFilterConnection", "Token", "TokenRankingAttribute", "TokenRankingsInput"]
+     
+     WRONG EXAMPLE (what NOT to do):
+       ❌ Skip graphql_type_detail and assume:
+          - filterTokens has "first" parameter (WRONG - it's "limit")
+          - filterTokens returns "nodes" field (WRONG - it's "results")
+          - rankings uses string "liquidity" (WRONG - it's enum liquidity without quotes)
+   
+   - Step 2.2: Call graphql_type_detail for ALL identified types in Step 2.1
+     Example: graphql_type_detail(["TokenFilterConnection", "Token", "TokenRankingAttribute", "TokenRankingsInput"])
+     
+     The response will show you:
+     - ACTUAL field names (results NOT nodes, limit NOT first)
+     - ACTUAL argument types (enum NOT string)
+     - ACTUAL available fields in Token type
+   
+   - Step 2.3: READ the returned type definitions carefully, COPY EXACT field names character-by-character
+     Example response shows: "results: [Token]" → use "results" (NOT "nodes")
+     Example response shows: "limit: Int" → use "limit" (NOT "first")
+     Example response shows: "enum TokenRankingAttribute { liquidity }" → use liquidity (NOT "liquidity")
+     🚫 DO NOT modify, paraphrase, or "improve" field names from the type definition
+     🚫 DO NOT add suffixes like "Current", "Value", or change any characters
+     🚫 DO NOT assume GraphQL conventions (Relay-style nodes/edges, first/last pagination)
+     ✅ COPY field names EXACTLY as shown in graphql_type_detail output
+   
+   - Step 2.4: If you discover MORE nested types while reading definitions, call graphql_type_detail again
+     Example: Found "stats24h: NftCollectionStats" → call graphql_type_detail(["NftCollectionStats"])
+   
+   - 🚫 FORBIDDEN: NEVER guess type names based on conventions (e.g., "Connection" → "Edge", "Filter" → "Input")
+   - 🚫 FORBIDDEN: NEVER assume field names without seeing them in graphql_type_detail results
+   - 🚫 FORBIDDEN: NEVER construct query before getting type definitions
+   - ✅ REQUIRED: ONLY use type names that appear EXPLICITLY in graphql_type_detail responses
+
+3. 🛠️ CONSTRUCT QUERY (ONLY AFTER STEP 2 COMPLETE):
+   ⚠️ CHECKPOINT: Before constructing query, verify:
+   - Have you called graphql_type_detail for the return type? ✓
+   - Have you called graphql_type_detail for ALL nested types you plan to use? ✓
+   - Do you have the EXACT field names from graphql_type_detail outputs? ✓
+   If ANY answer is NO → GO BACK TO STEP 2
+   
+   - Use ONLY the field names from graphql_type_detail results
+   - Build valid GraphQL query with proper syntax (curly braces, proper nesting)
+   - BEFORE constructing query, analyze if you need multiple queries:
+     * If NO data dependency: Combine ALL into ONE query using aliases
+     * If there IS data dependency: Query sequentially (e.g., get ID first, then query details)
+   - Do not introduce any facts, concepts, assumptions, or entities not in the tool outputs
+
+4. ✅ VALIDATE AND EXECUTE:
+   - Use graphql_query_validator_execute to validate and run the query
+
+5. ⚠️ CHECK RESULTS:
+   - After query execution, CHECK if results contain the answer
+   - If YES → Immediately provide final answer (DO NOT query again)
+   - If NO → Only then consider if a second query is truly necessary
+
+6. 📊 PROVIDE ANSWER:
+   - Give clear, user-friendly summary of the results
+
+"""
+
+    critical_tool_rules = """
 ⚠️ CRITICAL RULES - TOOL CALL LIMIT:
 - NEVER make verification queries, think thoroughly before you make a query.
 - ALWAYS limit the return with first:10 for ALL list queries as well as in the nested queries, unless told otherwise and it is smaller.
@@ -454,12 +603,39 @@ WORKFLOW:
 
     if is_synthetic:
         # For synthetic challenges, always attempt to answer without domain limitations
+        codex_output_format = """
+OUTPUT FORMAT FOR CODEX:
+Your response MUST contain TWO parts in this exact format:
+
+## Answer
+[Provide the complete, definitive answer to the user's question here]
+
+## Queries
+[List ALL GraphQL queries you executed, one per line, in the exact format they were sent to graphql_query_validator_execute]
+
+Example:
+## Answer
+The top 3 NFT pools by volume are:
+1. Pool XYZ with volume 1,234,567
+2. Pool ABC with volume 987,654
+3. Pool DEF with volume 543,210
+
+## Queries
+{ filterPools(rankings: {attribute: "volume", direction: DESC}, first: 3) { id name volume } }
+"""
+        
         return f"""You are a GraphQL assistant helping with data queries for {domain_name}. You can help users find information about:
 {capabilities_text}
+
+{codex_intructions if node_type == GraphqlProvider.CODEX else ""}
+
+{extra_instructions if extra_instructions else ""}
 
 IMPORTANT: This is a synthetic challenge. ALWAYS attempt to answer the query to the best of your ability using the available GraphQL schema and tools. Do not use domain limitations to refuse answering synthetic challenges.
 
 RESPONSE STYLE: Provide complete, definitive responses. Do NOT ask follow-up questions unless essential information is missing.
+
+{codex_output_format if node_type == GraphqlProvider.CODEX else ""}
 
 ERROR HANDLING:
 - If you cannot complete the request due to technical limitations (e.g., insufficient recursion steps, tool failures, schema issues), you MUST respond with EXACTLY this format:
@@ -471,11 +647,9 @@ ERROR HANDLING:
 - Do NOT use phrases like "Sorry, need more steps" or other informal error messages
 - Do NOT provide partial answers when you encounter errors - use the ERROR format
 
-{workflow}
+{codex_workflow if node_type == GraphqlProvider.CODEX else workflow}
 
-{critical_rules}
-
-{extra_instructions if extra_instructions else ""}
+{critical_tool_rules}
 
 For missing user info (like "my rewards", "my tokens"), always ask for the specific wallet address or ID rather than fabricating data."""
     else:
@@ -496,81 +670,433 @@ IF RELATED to {domain_name} data:
 3. Execute queries with graphql_query_validator_execute
 4. Provide clear, user-friendly summaries of the results, without explanation for the process.
 
-{critical_rules}
+{critical_tool_rules}
 
 For missing user info (like "my rewards", "my tokens"), always ask for the specific wallet address or ID rather than fabricating data.
 """
 
 
+# class GraphQLTypeDetailInput(BaseModel):
+#     """Input for GraphQL type detail tool."""
+#     type_name: str = Field(description="Name of the GraphQL type to examine")
+
+
+# class GraphQLTypeDetailTool(BaseTool):
+#     """
+#     Tool to get type definition for a specific GraphQL type.
+#     Use only as fallback when validation fails - prefer using raw schema from graphql_schema_info.
+#     """
+    
+#     model_config = ConfigDict(arbitrary_types_allowed=True)
+    
+#     name: str = "graphql_type_detail"
+#     description: str = """
+#     Get type definition for a specific GraphQL type (depth=0 only to minimize tokens).
+    
+#     IMPORTANT: Only use this tool as a FALLBACK when query validation fails and you need
+#     to check specific type definitions. Prefer using the raw schema from graphql_schema_info.
+    
+#     Input: type_name (string) - exact type name to examine
+#     Example: "IndexerConnection", "Project", "EraRewardFilter"
+#     """
+#     args_schema: Type[BaseModel] = GraphQLTypeDetailInput
+    
+#     def __init__(self, graphql_source):
+#         super().__init__()
+#         self._graphql_source = graphql_source
+#         self._schema_data_cache = None
+    
+#     @property
+#     def graphql_source(self):
+#         return self._graphql_source
+    
+#     def _run(
+#         self,
+#         type_name: str,
+#         run_manager: Optional[CallbackManagerForToolRun] = None,
+#     ) -> str:
+#         """Get GraphQL type detail synchronously."""
+#         return asyncio.run(self._arun(type_name))
+    
+#     async def _arun(
+#         self,
+#         type_name: str,
+#         run_manager: Optional[AsyncCallbackManagerForToolRun] = None,
+#     ) -> str:
+#         """Get type definition for a specific GraphQL type."""
+#         try:
+#             # Use cached schema_data if available
+#             if self._schema_data_cache is None:
+#                 self._schema_data_cache = await self.graphql_source.get_schema_data()
+#             schema_data = self._schema_data_cache
+            
+#             # Use depth=0 to minimize token consumption
+#             result = process_graphql_schema(schema_data, filter=type_name, depth=0)
+            
+#             if "not found" in result.lower():
+#                 return f"Type '{type_name}' not found in schema. Check type name spelling or use graphql_schema_info to see available types."
+            
+#             return f"""Type definition for '{type_name}' (depth=0 for minimal tokens):
+
+# {result}
+
+# 💡 This is a fallback tool - prefer using raw schema from graphql_schema_info for better context."""
+            
+#         except Exception as e:
+#             return f"Error getting type detail: {str(e)}"
+
+
 class GraphQLTypeDetailInput(BaseModel):
     """Input for GraphQL type detail tool."""
-    type_name: str = Field(description="Name of the GraphQL type to examine")
+    type_names: list[str] = Field(
+        description="Names of the GraphQL types to examine (e.g., ['NftPoolResponse', 'TokenFilterConnection'])",
+        min_length=1
+    )
+    depth: int = Field(
+        description="How many levels deep to extract nested types. Default 2 (type + direct children). Increase to 99 for full type tree.",
+        default=2,
+        ge=0,
+        le=99
+    )
 
 
 class GraphQLTypeDetailTool(BaseTool):
     """
-    Tool to get type definition for a specific GraphQL type.
-    Use only as fallback when validation fails - prefer using raw schema from graphql_schema_info.
+    Tool to get type definitions for multiple GraphQL types with configurable depth.
+    Only available for CODEX node type.
     """
     
     model_config = ConfigDict(arbitrary_types_allowed=True)
     
     name: str = "graphql_type_detail"
-    description: str = """
-    Get type definition for a specific GraphQL type (depth=0 only to minimize tokens).
+    description: str = """Get type definitions for multiple GraphQL types with configurable depth.
+
+IMPORTANT: Only use this tool as a FALLBACK when query validation fails and you need
+to check specific type definitions. Prefer using the raw schema from graphql_schema_info.
+
+Input:
+- type_names (array of strings): Exact type names to examine (e.g., ["NftPoolResponse", "TokenFilterConnection"])
+- depth (number): Depth for nested type extraction (default: 2, max: 99)
+  - depth=0: Only the type definition itself
+  - depth=1: Type + immediate nested types
+  - depth=2: Type + nested types + their children (recommended default)
+  - depth=99: Full type tree (use when deep understanding needed)"""
     
-    IMPORTANT: Only use this tool as a FALLBACK when query validation fails and you need
-    to check specific type definitions. Prefer using the raw schema from graphql_schema_info.
-    
-    Input: type_name (string) - exact type name to examine
-    Example: "IndexerConnection", "Project", "EraRewardFilter"
-    """
     args_schema: Type[BaseModel] = GraphQLTypeDetailInput
-    
-    def __init__(self, graphql_source):
+
+    def __init__(self, graphql_source: "GraphQLSource", node_type: str):
         super().__init__()
         self._graphql_source = graphql_source
-        self._schema_data_cache = None
+        self._node_type = node_type
+        self._full_schema = None
+        self._document_node = None
+        self._type_cache: Dict[str, Dict] = {}
     
     @property
-    def graphql_source(self):
+    def graphql_source(self) -> "GraphQLSource":
         return self._graphql_source
+    
+    def _parse_schema(self) -> bool:
+        """Parse the full schema and cache it. Returns True if successful."""
+        if self._document_node is not None:
+            return True
+        
+        try:
+            # Get full schema from graphql_source
+            self._full_schema = self.graphql_source.full_schema
+            if not self._full_schema:
+                logger.error('Codex config is missing fullSchema')
+                return False
+            
+            # Parse the schema
+            self._document_node = graphql.parse(self._full_schema)
+            return True
+        except Exception as e:
+            logger.error(f'Failed to parse GraphQL schema: {e}')
+            return False
+    
+    def _get_all_type_definitions(self) -> Dict[str, Dict]:
+        """Extract all type definitions from the document node and cache them."""
+        if self._type_cache:
+            return self._type_cache
+        
+        if not self._document_node:
+            return {}
+        
+        for definition in self._document_node.definitions:
+            if hasattr(definition, 'name') and hasattr(definition.name, 'value'):
+                name = definition.name.value
+                self._type_cache[name] = {
+                    'node': definition,
+                    'raw': self._definition_node_to_string(definition),
+                    'type_name': name
+                }
+        
+        return self._type_cache
+    
+    def _definition_node_to_string(self, node) -> str:
+        """Convert a GraphQL definition node to a string representation."""
+        parts = []
+        
+        node_kind = node.__class__.__name__
+        
+        if node_kind in ['ObjectTypeDefinitionNode', 'InterfaceTypeDefinitionNode']:
+            if hasattr(node, 'description') and node.description:
+                parts.append(f'"""{node.description.value}"""')
+            
+            if node_kind == 'ObjectTypeDefinitionNode':
+                parts.append(f'type {node.name.value}')
+            else:
+                parts.append(f'interface {node.name.value}')
+            
+            if hasattr(node, 'interfaces') and node.interfaces:
+                interfaces = ' & '.join([i.name.value for i in node.interfaces])
+                parts.append(f' implements {interfaces}')
+            
+            parts.append(' {')
+            
+            if hasattr(node, 'fields') and node.fields:
+                for field in node.fields:
+                    field_str = self._field_node_to_string(field)
+                    parts.append(f'  {field_str}')
+            
+            parts.append('}')
+        
+        elif node_kind == 'InputObjectTypeDefinitionNode':
+            if hasattr(node, 'description') and node.description:
+                parts.append(f'"""{node.description.value}"""')
+            parts.append(f'input {node.name.value} {{')
+            
+            if hasattr(node, 'fields') and node.fields:
+                for field in node.fields:
+                    field_str = self._input_field_node_to_string(field)
+                    parts.append(f'  {field_str}')
+            
+            parts.append('}')
+        
+        elif node_kind == 'EnumTypeDefinitionNode':
+            if hasattr(node, 'description') and node.description:
+                parts.append(f'"""{node.description.value}"""')
+            parts.append(f'enum {node.name.value} {{')
+            
+            if hasattr(node, 'values') and node.values:
+                for value in node.values:
+                    if hasattr(value, 'description') and value.description:
+                        parts.append(f'  """{value.description.value}"""')
+                    parts.append(f'  {value.name.value}')
+            
+            parts.append('}')
+        
+        elif node_kind == 'UnionTypeDefinitionNode':
+            if hasattr(node, 'description') and node.description:
+                parts.append(f'"""{node.description.value}"""')
+            types = ' | '.join([t.name.value for t in (node.types or [])])
+            parts.append(f'union {node.name.value} = {types}')
+        
+        elif node_kind == 'ScalarTypeDefinitionNode':
+            if hasattr(node, 'description') and node.description:
+                parts.append(f'"""{node.description.value}"""')
+            parts.append(f'scalar {node.name.value}')
+
+        return '\n'.join(parts)
+    
+    def _field_node_to_string(self, field) -> str:
+        """Convert a field node to string."""
+        parts = []
+        
+        if hasattr(field, 'description') and field.description:
+            parts.append(f'"""{field.description.value}"""')
+        
+        parts.append(field.name.value)
+        
+        if hasattr(field, 'arguments') and field.arguments:
+            args = []
+            for arg in field.arguments:
+                arg_parts = []
+                if hasattr(arg, 'description') and arg.description:
+                    arg_parts.append(f'"""{arg.description.value}""" ')
+                arg_parts.append(f'{arg.name.value}: {self._type_node_to_string(arg.type)}')
+                if hasattr(arg, 'default_value') and arg.default_value:
+                    arg_parts.append(f' = {self._value_node_to_string(arg.default_value)}')
+                args.append(''.join(arg_parts))
+            parts.append('(')
+            parts.append(', '.join(args))
+            parts.append(')')
+        
+        parts.append(f': {self._type_node_to_string(field.type)}')
+        
+        return ''.join(parts)
+    
+    def _input_field_node_to_string(self, field) -> str:
+        """Convert an input field node to string."""
+        parts = []
+        
+        if hasattr(field, 'description') and field.description:
+            parts.append(f'"""{field.description.value}"""')
+        
+        parts.append(f'{field.name.value}: {self._type_node_to_string(field.type)}')
+        
+        return ''.join(parts)
+    
+    def _type_node_to_string(self, type_node) -> str:
+        """Convert a type node to string."""
+        node_kind = type_node.__class__.__name__
+        
+        if node_kind == 'NamedTypeNode':
+            return type_node.name.value
+        elif node_kind == 'ListTypeNode':
+            return f'[{self._type_node_to_string(type_node.type)}]'
+        elif node_kind == 'NonNullTypeNode':
+            return f'{self._type_node_to_string(type_node.type)}!'
+        
+        return ''
+    
+    def _value_node_to_string(self, value) -> str:
+        """Convert a value node to string."""
+        node_kind = value.__class__.__name__
+        
+        if node_kind == 'NullValueNode':
+            return 'null'
+        elif hasattr(value, 'value'):
+            return str(value.value)
+        
+        return ''
+    
+    def _extract_referenced_types(self, node) -> list[str]:
+        """Extract all type references from a definition node."""
+        types = set()
+        
+        def extract_from_type_node(type_node):
+            node_kind = type_node.__class__.__name__
+            
+            if node_kind == 'NamedTypeNode':
+                types.add(type_node.name.value)
+            elif node_kind in ['ListTypeNode', 'NonNullTypeNode']:
+                extract_from_type_node(type_node.type)
+        
+        node_kind = node.__class__.__name__
+        
+        if node_kind in ['ObjectTypeDefinitionNode', 'InterfaceTypeDefinitionNode']:
+            if hasattr(node, 'interfaces') and node.interfaces:
+                for iface in node.interfaces:
+                    types.add(iface.name.value)
+            
+            if hasattr(node, 'fields') and node.fields:
+                for field in node.fields:
+                    extract_from_type_node(field.type)
+                    
+                    if hasattr(field, 'arguments') and field.arguments:
+                        for arg in field.arguments:
+                            extract_from_type_node(arg.type)
+        
+        elif node_kind == 'InputObjectTypeDefinitionNode':
+            if hasattr(node, 'fields') and node.fields:
+                for field in node.fields:
+                    extract_from_type_node(field.type)
+        
+        elif node_kind == 'UnionTypeDefinitionNode':
+            if hasattr(node, 'types') and node.types:
+                for t in node.types:
+                    types.add(t.name.value)
+        
+        return list(types)
+    
+    def _extract_type_with_depth(
+        self,
+        type_name: str,
+        max_depth: int,
+        visited: set[str] = None,
+        current_depth: int = 0
+    ) -> str | None:
+        """Extract type definition with nested types up to max_depth."""
+        if visited is None:
+            visited = set()
+        
+        if type_name in visited or current_depth > max_depth:
+            return None
+        
+        # Skip built-in scalars and introspection types
+        built_in_types = {
+            'ID', 'String', 'Int', 'Float', 'Boolean',
+            'Query', 'Mutation', 'Subscription',
+            '__Schema', '__Type', '__TypeKind', '__Field',
+            '__InputValue', '__EnumValue', '__Directive', '__DirectiveLocation'
+        }
+        
+        if type_name in built_in_types:
+            return None
+        
+        visited.add(type_name)
+        
+        type_defs = self._get_all_type_definitions()
+        type_def = type_defs.get(type_name)
+        
+        if not type_def:
+            return None
+        
+        result = type_def['raw']
+        
+        if current_depth < max_depth:
+            referenced_types = self._extract_referenced_types(type_def['node'])
+            nested_types = []
+            
+            for ref_type in referenced_types:
+                nested = self._extract_type_with_depth(
+                    ref_type, max_depth, visited, current_depth + 1
+                )
+                if nested:
+                    nested_types.append(nested)
+            
+            if nested_types:
+                result += '\n\n' + '\n\n'.join(nested_types)
+        
+        return result
     
     def _run(
         self,
-        type_name: str,
+        type_names: list[str],
+        depth: int = 4,
         run_manager: Optional[CallbackManagerForToolRun] = None,
     ) -> str:
         """Get GraphQL type detail synchronously."""
-        return asyncio.run(self._arun(type_name))
+        return asyncio.run(self._arun(type_names, depth))
     
     async def _arun(
         self,
-        type_name: str,
+        type_names: list[str],
+        depth: int = 4,
         run_manager: Optional[AsyncCallbackManagerForToolRun] = None,
     ) -> str:
-        """Get type definition for a specific GraphQL type."""
+        """Get type definitions for multiple GraphQL types."""
+        # Only return for CODEX nodeType
+        if self._node_type != GraphqlProvider.CODEX:
+            return "❌ graphql_type_detail tool is only available for CODEX node type."
+        
         try:
-            # Use cached schema_data if available
-            if self._schema_data_cache is None:
-                self._schema_data_cache = await self.graphql_source.get_schema_data()
-            schema_data = self._schema_data_cache
+            logger.debug(f'Extracting GraphQL type details for {type_names} with depth={depth}')
             
-            # Use depth=0 to minimize token consumption
-            result = process_graphql_schema(schema_data, filter=type_name, depth=0)
+            # Parse schema if not already done
+            if not self._parse_schema():
+                return "❌ Failed to parse GraphQL schema"
             
-            if "not found" in result.lower():
-                return f"Type '{type_name}' not found in schema. Check type name spelling or use graphql_schema_info to see available types."
+            results = []
             
-            return f"""Type definition for '{type_name}' (depth=0 for minimal tokens):
-
-{result}
-
-💡 This is a fallback tool - prefer using raw schema from graphql_schema_info for better context."""
+            for type_name in type_names:
+                result = self._extract_type_with_depth(type_name, depth)
+                
+                if not result:
+                    results.append(
+                        f"## Type '{type_name}'\n"
+                        f"❌ Not found in schema. Check type name spelling or use graphql_schema_info to see available types."
+                    )
+                else:
+                    results.append(f"## Type '{type_name}' (depth={depth})\n\n{result}")
+            
+            return '\n\n---\n\n'.join(results)
             
         except Exception as e:
-            return f"Error getting type detail: {str(e)}"
-
+            logger.error(f'Error extracting type details: {e}')
+            return f"Error getting type details: {str(e)}"
 
 class GraphQLQueryValidatorInput(BaseModel):
     """Input for GraphQL query validator tool."""
@@ -716,9 +1242,10 @@ class GraphQLQueryValidatorAndExecutedTool(BaseTool):
     """
     args_schema: Type[BaseModel] = GraphQLQueryValidatorInput
     
-    def __init__(self, graphql_source: "GraphQLSource"):
+    def __init__(self, graphql_source: "GraphQLSource", node_type: str):
         super().__init__()
         self._graphql_source = graphql_source
+        self._node_type = node_type
     
     @property
     def graphql_source(self):
@@ -786,15 +1313,21 @@ class GraphQLQueryValidatorAndExecutedTool(BaseTool):
                 # Parse the query
                 document = graphql.parse(query)
                 
-                # Get complete introspection result for proper validation
-                introspection_result = await self.graphql_source.get_schema()
-                
-                # Build GraphQL schema from introspection data (use data part only)
-                schema_data = introspection_result.get('data', None)
-                if not schema_data:
-                    return "❌ Schema validation failed: No data in introspection result"
-                
-                schema = build_client_schema(schema_data)
+                # For CODEX, use full schema directly; for others, use introspection
+                if self._node_type == GraphqlProvider.CODEX:
+                    # CODEX: Build schema from full schema string (introspection disabled on server)
+                    full_schema = self.graphql_source.full_schema
+                    if not full_schema:
+                        return "❌ Schema validation failed: CODEX full schema not available"
+                    schema = build_schema(full_schema)
+                    logger.info(f"Using CODEX full schema for validation")
+                else:
+                    # SubQL/TheGraph: Use introspection result
+                    introspection_result = await self.graphql_source.get_schema()
+                    schema_data = introspection_result.get('data', None)
+                    if not schema_data:
+                        return "❌ Schema validation failed: No data in introspection result"
+                    schema = build_client_schema(schema_data)
                 
                 # Use graphql-core's built-in validation
                 validation_errors = validate(schema, document)

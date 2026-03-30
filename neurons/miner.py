@@ -1,6 +1,4 @@
 # The MIT License (MIT)
-# Copyright © 2023 Yuma Rao
-# Copyright © 2023 <your name>
 
 # Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated
 # documentation files (the “Software”), to deal in the Software without restriction, including without limitation
@@ -230,13 +228,18 @@ class Miner(BaseNeuron):
         cid_hash = task.cid_hash
         graph, graphql_agent = self.agent_manager.get_miner_agent(cid_hash)
 
+        enable_fallback = os.getenv("ENABLE_FALL_BACK_GRAPHQL_AGENT", "false").lower() == "true"
         if isinstance(task, SyntheticNonStreamSynapse):
             tag = "Synthetic"
             type = 0
             is_synthetic = True
             phase = Phase.MINER_SYNTHETIC
             messages = [
-                SystemMessage(content=get_miner_self_tool_prompt(block_height=task.block_height, node_type=graphql_agent.config.node_type if graphql_agent else "unknown")),
+                SystemMessage(content=get_miner_self_tool_prompt(
+                    block_height=task.block_height, 
+                    node_type=graphql_agent.config.node_type if graphql_agent else "unknown",
+                    enable_fallback=enable_fallback)
+                ),
                 HumanMessage(content=question)
             ]
 

@@ -1,17 +1,14 @@
-from dataclasses import asdict, dataclass
 import json
 import os
 from pathlib import Path
 import sys
-from typing import Dict, List
 import aiohttp
 import httpx
 from langchain_openai import ChatOpenAI
 from loguru import logger
 from pydantic import BaseModel
 import yaml
-from agent.subquery_graphql_agent.base import ProjectConfig
-from agent.subquery_graphql_agent.node_types import detect_node_type
+import agent.subquery_graphql_agent as subqlAgent
 from common.enums import ProjectPhase
 import common.utils as utils
 
@@ -28,7 +25,7 @@ class Project(BaseModel):
     metadata: Metadata
 
 class ProjectData(BaseModel):
-    data: List[Project]
+    data: list[Project]
     total: int
     page: int
     pageSize: int
@@ -50,18 +47,20 @@ class ChallengeData(BaseModel):
 class ChallengeResponse(BaseModel):
     nextUpdate: int
     now: int
-    boardChallenges: List[ChallengeData]
+    boardChallenges: list[ChallengeData]
 
 ALLOWED_CID = []
 
 class ProjectManager:
-    projects: Dict[str, Project] = {}
-    projects_config: Dict[str, ProjectConfig] = {}
+    projects: dict[str, Project]
+    projects_local: dict[str, subqlAgent.LocalProjectBase]
     target_dir: Path | None = None
     llm: ChatOpenAI
 
     def __init__(self, llm: ChatOpenAI, target_dir: Path | None = None):
         self.llm = llm
+        self.projects = {}
+        self.projects_local = {}
         if target_dir is not None:
             self.target_dir = Path(target_dir)
 
@@ -112,7 +111,7 @@ class ProjectManager:
             logger.info(f"[ProjectManager] Total projects fetched: {len(all_projects)}")
 
         # Process all fetched projects
-        new_projects = {}
+        new_projects: dict[str, Project] = {}
         for project in all_projects:
             cid = project.metadata.cid
             combined = f"{cid}{project.metadata.endpoint}"
@@ -127,18 +126,19 @@ class ProjectManager:
                 logger.warning(f"[ProjectManager] Project {project.metadata.cid} is not in the allowed list.")
                 continue
 
-            existing_config = self._load_existing_project(cid_hash)
-            if existing_config:
-                if cid_hash not in self.projects_config:
+            existing = self._load_existing_project(cid_hash)
+            if existing:
+                if cid_hash not in self.projects_local:
                     if not silent:
-                        logger.info(f"[ProjectManager] Loading existing project: {existing_config.domain_name} ({cid_hash})")
-                    self.projects_config[cid_hash] = existing_config
+                        logger.info(f"[ProjectManager] Loading existing project: {existing.domain_name} ({cid_hash})")
+                    self.projects_local[cid_hash] = existing
             else:
                 # Register projects
                 await self.register_project(cid_hash, project.metadata.endpoint)
         
     def load(self):
-        projects: dict[str, ProjectConfig] = {}
+        projects: dict[str, subqlAgent.LocalProjectBase] = {}
+
         for project_dir in self.target_dir.iterdir():
             if not project_dir.is_dir():
                 continue
@@ -146,11 +146,13 @@ class ProjectManager:
             if cid_hash == "__pycache__":
                 continue
             config_file = project_dir / "config.json"
-            if not config_file.exists():
+
+            p = subqlAgent.from_file(config_file)
+
+            if p is None:
                 continue
-            with open(config_file) as f:
-                config = json.load(f)
-            projects[cid_hash] = ProjectConfig(**config)
+
+            projects[cid_hash] = p
 
         self.projects = {cid_hash: Project(
             enabled=True,
@@ -158,19 +160,16 @@ class ProjectManager:
             name="",
             phase=ProjectPhase.NORMAL.value,
             metadata=Metadata(
-                cid=config.cid,
-                endpoint=config.endpoint
+                cid=p.cid,
+                endpoint=p.endpoint
             )
-        ) for cid_hash, config in projects.items()}
+        ) for cid_hash, p in projects.items()}
 
-        self.projects_config.update({cid_hash: config for cid_hash, config in projects.items()})
-        return self.projects_config
+        self.projects_local.update({cid_hash: p for cid_hash, p in projects.items()})
+        return self.projects_local
 
-    def get_project(self, cid: str) -> ProjectConfig:
-        return self.projects_config.get(cid)
-
-    def get_projects(self) -> Dict[str, ProjectConfig]:
-        return self.projects_config
+    def get_local_projects(self) -> dict[str, subqlAgent.LocalProjectBase]:
+        return self.projects_local
 
     def is_project_enabled(self, cid_hash: str) -> bool:
         project = self.projects.get(cid_hash, None)
@@ -182,7 +181,7 @@ class ProjectManager:
             return project.phase
         return ProjectPhase.NORMAL.value
 
-    async def pull_manifest(self, cid: str) -> Dict:
+    async def pull_manifest(self, cid: str) -> dict:
         try:
             logger.info(f"[ProjectManager] Fetching manifest for CID: {cid}")
             manifest_content = await utils.fetch_from_ipfs(cid)
@@ -194,7 +193,7 @@ class ProjectManager:
         except Exception as e:
             raise RuntimeError(f"[ProjectManager] Failed to pull manifest {cid}: {str(e)}")
 
-    async def pull_schema(self, cid: str, manifest: Dict) -> str:
+    async def pull_schema(self, cid: str, manifest: dict) -> str:
         try:
             # Handle different schema path formats
             schema_info = manifest.get('schema', {})
@@ -236,7 +235,7 @@ class ProjectManager:
         except Exception as e:
             raise RuntimeError(f"[ProjectManager] Failed to pull schema: {str(e)}")
 
-    async def register_project(self, cid_hash: str, endpoint: str) -> ProjectConfig:
+    async def register_project(self, cid_hash: str, endpoint: str) ->subqlAgent.ProjectConfig:
         try:
             # Project doesn't exist locally, need to analyze with LLM
             logger.info(f"[ProjectManager] Analyzing new project: {cid_hash} at {endpoint}")
@@ -244,12 +243,12 @@ class ProjectManager:
             manifest = await self.pull_manifest(cid)
             schema_content = await self.pull_schema(cid, manifest)
 
-            detected_node_type = detect_node_type(manifest)
+            detected_node_type = subqlAgent.detect_node_type(manifest)
             logger.info(f"Detected node type: {detected_node_type}")
             
             llm_analysis = await self.analyze_project_with_llm(manifest, schema_content, llm=self.llm)
 
-            config = ProjectConfig(
+            p = subqlAgent.project_factory(
                 cid=cid,
                 endpoint=endpoint,
                 cid_hash=cid_hash,
@@ -260,13 +259,13 @@ class ProjectManager:
                 domain_capabilities=llm_analysis["domain_capabilities"],
                 decline_message=llm_analysis["decline_message"],
                 suggested_questions=llm_analysis.get("suggested_questions", []),
+                local_dir=self.target_dir / cid_hash,
             )
-            # Save to disk and memory
-            self._save_project(config)
+            p.save()
 
-            self.projects_config[cid_hash] = config
+            self.projects_local[cid_hash] = p
             logger.info(f"[ProjectManager] Registered new project: {llm_analysis['domain_name']} ({cid_hash}) with endpoint {endpoint}")
-            return config
+            return p
         except Exception as e:
             raise RuntimeError(f"[ProjectManager] Failed to register project {cid_hash} with endpoint {endpoint}: {str(e)}")
 
@@ -422,40 +421,17 @@ Make each capability very specific to the entities found in the schema."""
                 ]
             }
 
-    def _load_existing_project(self, cid_hash: str) -> ProjectConfig | None:
+    def _load_existing_project(self, cid_hash: str) -> subqlAgent.LocalProjectBase | None:
         """Load existing project configuration from local disk if it exists."""
         if self.target_dir is None:
             return None
-
         config_file = self.target_dir / cid_hash / "config.json"
-        if not config_file.exists():
-            return None
-
+        
         try:
-            with open(config_file, 'r') as f:
-                config_data = json.load(f)
-
-            # Validate that the loaded config has all required fields
-            required_fields = ['cid', 'endpoint', 'schema_content', 'domain_name', 'domain_capabilities']
-            for field in required_fields:
-                if field not in config_data:
-                    logger.warning(f"[ProjectManager] Existing project {cid_hash} missing required field: {field}")
-                    return None
-
-            return ProjectConfig(**config_data)
+            return subqlAgent.from_file(config_file)
         except Exception as e:
             logger.error(f"[ProjectManager] Failed to load existing project {cid_hash}: {e}")
             return None
-
-    def _save_project(self, config: ProjectConfig):
-        # current_dir = Path(__file__).parent
-        # PROJECTS_DIR = current_dir.parent / "projects"
-        dir = self.target_dir / config.cid_hash
-        dir.mkdir(parents=True, exist_ok=True)
-
-        file = dir / "config.json"
-        with open(file, "w") as f:
-            json.dump(asdict(config), f, indent=2)
 
     async def pull_mock_challenges(self, page: int = 1):
         board_url = os.environ.get('BOARD_SERVICE')

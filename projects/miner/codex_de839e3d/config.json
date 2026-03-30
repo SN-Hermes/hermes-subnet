@@ -1,0 +1,17 @@
+{
+  "cid": "codex",
+  "endpoint": "https://graph.codex.io/graphql",
+  "schema_content": "",
+  "cid_hash": "codex_de839e3d",
+  "node_type": "codex",
+  "domain_name": "Codex GraphQL API",
+  "domain_capabilities": [
+    "NFT pool queries and analytics",
+    "NFT collection metadata and stats",
+    "Token prices and market data",
+    "Wallet tracking and balances",
+    "DEX pair and exchange data",
+    "Chain & Block information"
+  ],
+  "decline_message": "This query is outside the scope of Codex API capabilities."
+}

@@ -14,6 +14,7 @@ from multiprocessing.synchronize import Event
 import numpy as np
 import torch
 
+from agent.subquery_graphql_agent.node_types import GraphqlProvider
 from hermes.validator.benchmark import BenchMark
 if TYPE_CHECKING:
     from neurons.validator import Validator
@@ -179,7 +180,7 @@ class ChallengeManager:
                 address=self.settings.wallet.hotkey.ss58_address,
                 version=self.settings.version,
                 cpu_count=self.settings.cpu_count,
-                projects=list(self.agent_manager.get_projects().keys())
+                projects=list(self.agent_manager.get_local_projects().keys())
             )
 
             self.task = [
@@ -216,7 +217,7 @@ class ChallengeManager:
             while not self.event_stop.is_set():
                 await asyncio.sleep(challenge_interval)
 
-                projects = self.agent_manager.get_projects()
+                projects = self.agent_manager.get_local_projects()
                 if not projects:
                     logger.warning("[ChallengeManager] No projects found, skipping this round.")
                     challenge_interval = 30
@@ -260,7 +261,7 @@ class ChallengeManager:
                 project_score_matrix = []
                 organic_success_score_threshold = self.ipc_meta_config.get("organic_success_score_threshold", 5)
 
-                for cid_hash, project_config in projects.items():
+                for cid_hash, p in projects.items():
                     allowed_cid_hashs_str = os.getenv("ALLOWED_PROJECT_CID_HASHS", "").strip()
                     if allowed_cid_hashs_str:
                         allowed_cid_hashs = allowed_cid_hashs_str.split(",")
@@ -287,7 +288,7 @@ class ChallengeManager:
                         challenge_id = str(uuid4())
 
                         # get latest block
-                        latest_block = await utils.get_latest_block(project_config.endpoint, project_config.node_type)
+                        latest_block = await utils.get_latest_block(p.endpoint, p.node_type)
                         if latest_block is None and block_cache.get(cid_hash, None) is None:
                             logger.warning(f"[ChallengeManager] - {cid_hash} Failed to get latest block (attempt {attempt + 1}/{max_retries})")
                             error_msgs.append(f"(round: {self.round_id}, attempt: {attempt + 1}/{max_retries}, {cid_hash}) Failed to get latest block.")
@@ -295,11 +296,15 @@ class ChallengeManager:
                         
                         if latest_block is not None:
                             block_cache[cid_hash] = latest_block - 1000
-                        
+
+                        if p.node_type == GraphqlProvider.CODEX:
+                            weight_a = 100
+                            weight_b = 0
+
                         # generate challenge
                         question, q_metrics_data, error = await question_generator.generate_question(
                             cid_hash, 
-                            project_config,
+                            p.to_project_config(),
                             self.llm_synthetic,
                             self.token_usage_metrics,
                             round_id=self.round_id,
@@ -307,11 +312,12 @@ class ChallengeManager:
                             weight_b=weight_b     # tool
                         )
 
+
                         if not question:
                             logger.warning(f"[ChallengeManager] - {cid_hash} Failed to generate question (attempt {attempt + 1}/{max_retries})")
                             error_msgs.append(f"(round: {self.round_id}, attempt: {attempt + 1}/{max_retries}, {cid_hash}) {error}")
                             continue
-                        logger.info(f"[ChallengeManager] - {cid_hash} Selected block height: {block_cache[cid_hash]}. coldkey_penalty: {multi_coldkey_penalty}")
+                        logger.info(f"[ChallengeManager] - {cid_hash} Selected block height: {block_cache[cid_hash]}")
 
                         success, ground_truth, ground_cost, metrics_data, model_name = await self.generate_ground_truth(
                             cid_hash=cid_hash,
@@ -394,7 +400,8 @@ class ChallengeManager:
                         ground_truth_scores,
                         elapse_weights,
                         miners_elapse_time,
-                        ground_truth_scores_error
+                        ground_truth_scores_error,
+                        ground_truth_scores_raw
                     ) = await self.scorer_manager.compute_challenge_score(
                         ground_truth,
                         ground_cost,
@@ -403,7 +410,8 @@ class ChallengeManager:
                         cid_hash=cid_hash,
                         token_usage_metrics=self.token_usage_metrics,
                         min_latency_improvement_ratio=self.ipc_meta_config.get("min_latency_improvement_ratio", 0.2),
-                        round_id=self.round_id
+                        round_id=self.round_id,
+                        node_type=p.node_type
                     )
 
                     if project_phase != ProjectPhase.WARMUP.value:
@@ -455,7 +463,7 @@ class ChallengeManager:
                         ) if q_metrics_data else None,
                         ground_truth_model_name=model_name,
                         score_model_name=self.llm_score.model_name,
-                        ground_truth=ground_truth[:500] if ground_truth else None,
+                        ground_truth=ground_truth if ground_truth else None,
                         ground_cost=ground_cost,
                         ground_truth_tools=[
                             parsed for t in metrics_data.get("tool_calls", []) if (parsed := utils.safe_json_loads(t)) is not None
@@ -474,9 +482,10 @@ class ChallengeManager:
                                 "elapsed": elapse_time,
                                 "truthScore": truth_score,
                                 "truthScoreError": score_error[:255] if score_error else "",
+                                "truthScoreRaw": score_raw,
                                 "statusCode": resp.status_code,
                                 "error": resp.error,
-                                "answer": resp.response[:500] if resp.response else "",
+                                "answer": resp.response if resp.response else "",
                                 "inputTokens": resp.usage_info.get("input_tokens", 0) if resp.usage_info else 0,
                                 "inputCacheReadTokens": resp.usage_info.get("input_cache_read_tokens", 0) if resp.usage_info else 0,
                                 "outputTokens": resp.usage_info.get("output_tokens", 0) if resp.usage_info else 0,
@@ -496,8 +505,8 @@ class ChallengeManager:
                                 "graphqlAgentInnerToolCalls": [],
                                 "graphqlAgentInnerToolCallsRaw": resp.graphql_agent_inner_tool_calls if resp.graphql_agent_inner_tool_calls else [],
                             }
-                            for uid, hotkey, elapse_time, truth_score, score_error, resp in zip(
-                                uids, hotkeys, miners_elapse_time, ground_truth_scores, ground_truth_scores_error, responses
+                            for uid, hotkey, elapse_time, truth_score, score_error, score_raw, resp in zip(
+                                uids, hotkeys, miners_elapse_time, ground_truth_scores, ground_truth_scores_error, ground_truth_scores_raw, responses
                             )
                             if resp.status_code != ErrorCode.NOT_HEALTHY.value
                         ],

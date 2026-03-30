@@ -133,6 +133,10 @@ MINER_LLM_MODEL=google/gemini-3-flash-preview
 # free api token can be obtained from https://thegraph.com/docs/en/subgraphs/querying/managing-api-keys/
 THEGRAPH_API_TOKEN=xx
 
+# The Codex API key for querying Codex data. needed for Codex projects
+# free api key can be obtained from https://dashboard.codex.io/dashboard/api-keys
+CODEX_API_TOKEN=xx
+
 # Enable only when you use a custom optimised LLM
 ENABLE_FALL_BACK_GRAPHQL_AGENT=false
 ```
@@ -319,7 +323,22 @@ For starter, can copy `projects/miner/QmfUNJC1Qz8m3F67sQmxrwjuSAu4WaCR1iBdPPdzBr
 To create your own tool, note that we use langgraph (https://github.com/langchain-ai/langgraph) to build the agent,
 it reads the tool's description and arguments from function docstring. So make sure you change them after the copy, and write clear and complete docstring for your tool.
 
-**Note:** To ensure the spatio-temporal uniqueness of challenges, each challenge automatically includes a `block_height` parameter. Therefore, every tool must include a `block_height` parameter. For specific examples, refer to the sample tools in the `projects/miner` directory.
+**Important Notes on Tool Implementation:**
+
+There are different requirements depending on the project type:
+
+**For Codex Projects:**
+- Due to the unique nature of Codex projects, tools do NOT require a `block_height` parameter
+- Instead, each tool must return **two parts**:
+  1. **Result**: The answer or data returned by the tool
+  2. **Query**: The GraphQL query used to retrieve the data
+- Both parts will be used by validators for scoring
+- **Example**: See the sample tools in the `projects/miner/codex_de839e3d` directory for reference
+
+**For Other Projects (Non-Codex):**
+- To ensure the spatio-temporal uniqueness of challenges, each challenge automatically includes a `block_height` parameter
+- Therefore, every tool **must** include a `block_height` parameter
+- **Example**: Refer to the sample tools in the `projects/miner/QmfUNJC1Qz8m3F67sQmxrwjuSAu4WaCR1iBdPPdzBruQ7P_00021a18` directory for reference
 
 
 ### 4. Put it into production and monitor

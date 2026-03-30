@@ -92,6 +92,66 @@ def get_available_cpu_count():
     return mp.cpu_count()
 
 
+def sanitize_json_string(raw_json: str) -> str:
+    """
+    Sanitize a JSON string by removing code fences, prefixes, and suffixes.
+    
+    This function handles common cases where LLMs wrap JSON in markdown code blocks
+    or add conversational text before/after the JSON object.
+    
+    Args:
+        raw_json: Raw string that may contain JSON with surrounding text
+        
+    Returns:
+        str: Cleaned JSON string ready for parsing
+        
+    Example:
+        >>> sanitize_json_string('```json\\n{"key": "value"}\\n```')
+        '{"key": "value"}'
+        >>> sanitize_json_string('Here is the result: {"key": "value"}')
+        '{"key": "value"}'
+    """
+    if not raw_json:
+        return "{}"
+    
+    sanitized = raw_json.strip()
+    
+    # Remove code fences (```json ... ``` or ``` ... ```)
+    if sanitized.startswith("```"):
+        # Find the first newline after the opening fence
+        first_newline = sanitized.find("\n")
+        if first_newline != -1:
+            sanitized = sanitized[first_newline + 1:]
+        else:
+            # If no newline, remove just the fence marker
+            sanitized = sanitized.lstrip("`").lstrip("json").strip()
+        
+        # Remove closing fence
+        if sanitized.endswith("```"):
+            sanitized = sanitized[:-3].rstrip()
+    
+    # Trim any non-JSON prefix (like "Here's the JSON:" or similar short text before {)
+    # Find the first { or [ which should start valid JSON
+    json_start = min(
+        (sanitized.find(c) for c in ["{", "["] if sanitized.find(c) != -1),
+        default=-1
+    )
+    if json_start > 0 and json_start < 100:  # Only trim if prefix is reasonably short
+        sanitized = sanitized[json_start:]
+    
+    # Find the last } or ] which should end valid JSON
+    json_end = max(
+        (sanitized.rfind(c) for c in ["}", "]"] if sanitized.rfind(c) != -1),
+        default=-1
+    )
+    if json_end != -1 and json_end < len(sanitized) - 1:
+        suffix_length = len(sanitized) - json_end - 1
+        if suffix_length < 100:  # Only trim if suffix is reasonably short
+            sanitized = sanitized[:json_end + 1]
+    
+    return sanitized.strip()
+
+
 def safe_json_loads(json_str: str):
     if not json_str or not json_str.strip():
         return None
@@ -643,7 +703,7 @@ async def get_latest_block(endpoint: str, node_type: str) -> int | None:
     
     Args:
         endpoint: The GraphQL endpoint URL
-        node_type: Type of node - "subql" or "thegraph"
+        node_type: Type of node - "subql", "thegraph", or "codex"
         
     Returns:
         int: Latest block height, or None if failed
@@ -677,6 +737,8 @@ async def get_latest_block(endpoint: str, node_type: str) -> int | None:
             if thegraph_token:
                 headers["Authorization"] = f"Bearer {thegraph_token}"
                 logger.info("Added THEGRAPH_API_TOKEN to Authorization header to get latest block")
+        elif node_type == "codex":
+            return 1000
         else:
             logger.error(f"Unknown node_type: {node_type}")
             return None

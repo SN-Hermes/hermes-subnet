@@ -1,0 +1,493 @@
+type Query {
+  """Get all active short-lived api tokens for this api key"""
+  apiTokens: [ApiToken!]!
+  """Get the active short-lived api token for this api key by the short-lived token"""
+  apiToken(
+    token: String!
+  ): ApiToken!
+  """Returns block data for the input blockNumbers or timestamps, maximum 25 inputs."""
+  blocks(
+    input: BlocksInput!
+  ): [Block!]!
+  """Returns a list of all networks supported on Codex."""
+  getNetworks: [Network!]!
+  """Returns the status of a list of networks supported on Codex."""
+  getNetworkStatus(
+    """The list of network IDs."""
+    networkIds: [Int!]!
+  ): [MetadataResponse!]
+  """Returns a user's list of webhooks."""
+  getWebhooks(
+    """The cursor to use for pagination."""
+    cursor: String
+    """webhookId: The id of the webhook you want to retrieve."""
+    webhookId: String
+    """bucketId: The bucketId of the webhooks you want to retrieve. Note that bucketId and webhookId are mutually exclusive, do not send both."""
+    bucketId: String
+    """bucketSortkey: The bucketSortkey of the webhooks you want to retrieve."""
+    bucketSortkey: String
+    """limit: The maximum number of webhooks to return."""
+    limit: Int
+  ): GetWebhooksResponse
+  """Returns a list of network configurations."""
+  getNetworkConfigs(
+    networkIds: [Int!]
+  ): [NetworkConfig!]!
+  """Returns a list of tokens based on a variety of filters."""
+  filterTokens(
+    """A set of filters to apply."""
+    filters: TokenFilters
+    """The type of statistics returned. Can be `FILTERED` or `UNFILTERED`. Default is `UNFILTERED`."""
+    statsType: TokenPairStatisticsType
+    """A phrase to search for. Can match a token or pair contract address or partially match a token's name or symbol."""
+    phrase: String
+    """A list of token IDs (`address:networkId`) or addresses. Can be left blank to discover new tokens."""
+    tokens: [String]
+    """A list of token IDs (`address:networkId`) to exclude from results"""
+    excludeTokens: [String]
+    """A list of ranking attributes to apply."""
+    rankings: [TokenRanking]
+    """Flag to use aggregated token stats. Default is `false`."""
+    useAggregatedStats: Boolean
+    """The maximum number of tokens to return."""
+    limit: Int
+    """Where in the list the server should start when returning items. Use `count`+`page` from the previous query to request the next page of results."""
+    offset: Int
+  ): TokenFilterConnection
+  """Returns a list of pairs based on a variety of filters."""
+  filterPairs(
+    """A set of filters to apply."""
+    filters: PairFilters
+    """The type of statistics returned. Can be `FILTERED` or `UNFILTERED`. Default is `UNFILTERED`."""
+    statsType: TokenPairStatisticsType
+    """A phrase to search for. Can match a token or pair contract address or ID (`address:networkId`), or partially match a token name or symbol."""
+    phrase: String
+    """A list of pair or token contract addresses or IDs (`address:networkId`) to filter by."""
+    pairs: [String]
+    """A set of token contract addresses that make up a pair. Can be used in place of a pair contract address."""
+    matchTokens: PairFilterMatchTokens
+    """A list of ranking attributes to apply."""
+    rankings: [PairRanking]
+    """The maximum number of pairs to return."""
+    limit: Int
+    """Where in the list the server should start when returning items. Use `count`+`offset` from the previous query to request the next page of results."""
+    offset: Int
+  ): PairFilterConnection
+  """Returns a list of exchanges based on a variety of filters."""
+  filterExchanges(
+    """A set of filters to apply."""
+    filters: ExchangeFilters
+    """A phrase to search for. Can match an exchange address or ID (`address:networkId`), or partially match an exchange name."""
+    phrase: String
+    """A list of ranking attributes to apply."""
+    rankings: [ExchangeRanking]
+    """The maximum number of exchanges to return."""
+    limit: Int
+    """Where in the list the server should start when returning items. Use `count`+`offset` from the previous query to request the next page of results."""
+    offset: Int
+  ): ExchangeFilterConnection
+  
+  """Returns bucketed stats for a given token within a pair."""
+  getDetailedPairStats(
+    """The contract address of the pair."""
+    pairAddress: String!
+    """The network ID the pair is deployed on."""
+    networkId: Int!
+    """The token of interest used to calculate token-specific stats for the pair. Can be `token0` or `token1`."""
+    tokenOfInterest: TokenOfInterest
+    """The unix timestamp for the stats. Defaults to current."""
+    timestamp: Int
+    """The list of durations to get detailed pair stats for."""
+    durations: [DetailedPairStatsDuration]
+    """The number of aggregated values to receive. Note: Each duration has predetermined bucket sizes. The first n-1 buckets are historical. The last bucket is a snapshot of current data. duration `day1`: 6 buckets (4 hours each) plus 1 partial bucket duration `hour12`: 12 buckets (1 hour each) plus 1 partial bucket duration `hour4`: 8 buckets (30 min each) plus 1 partial bucket duration `hour1`: 12 buckets (5 min each) plus 1 partial bucket duration `min5`: 5 buckets (1 min each) plus 1 partial bucket For example, requesting 11 buckets for a `min5` duration will return the last 10 minutes worth of data plus a snapshot for the current minute."""
+    bucketCount: Int
+    """The type of statistics returned. Can be `FILTERED` or `UNFILTERED`. Default is `UNFILTERED`."""
+    statsType: TokenPairStatisticsType
+  ): DetailedPairStats
+  """Returns bucketed stats for a given token."""
+  getDetailedTokenStats(
+    """The contract address of the token."""
+    tokenAddress: String!
+    """The network ID the token is deployed on."""
+    networkId: Int!
+    """The unix timestamp for the stats. Defaults to current."""
+    timestamp: Int
+    """The list of durations to get detailed token stats for."""
+    durations: [DetailedTokenStatsDuration]
+    """The number of aggregated values to receive. Note: Each duration has predetermined bucket sizes. The first n-1 buckets are historical. The last bucket is a snapshot of current data. duration `day1`: 6 buckets (4 hours each) plus 1 partial bucket duration `hour12`: 12 buckets (1 hour each) plus 1 partial bucket duration `hour4`: 8 buckets (30 min each) plus 1 partial bucket duration `hour1`: 12 buckets (5 min each) plus 1 partial bucket duration `min5`: 5 buckets (1 min each) plus 1 partial bucket For example, requesting 11 buckets for a `min5` duration will return the last 10 minutes worth of data plus a snapshot for the current minute."""
+    bucketCount: Int
+    """The type of statistics returned. Can be `FILTERED` or `UNFILTERED`. Default is `UNFILTERED`."""
+    statsType: TokenPairStatisticsType
+  ): DetailedTokenStats
+  """Returns bucketed stats for a given token within a list of pairs."""
+  getDetailedPairsStats(
+    input: [GetDetailedPairsStatsInput!]!
+  ): [DetailedPairStats]
+  """Returns charting metadata for a given pair. Used for implementing a Trading View datafeed."""
+  getSymbol(
+    """The ID of the pair (`address:networkId`)."""
+    symbol: String!
+    """The currency to use for the response. Can be `USD` (default) or `TOKEN`."""
+    currencyCode: String
+  ): SymbolResponse
+  """Returns metadata for a given network supported on Codex."""
+  getNetworkStats(
+    """The network Id to filter by."""
+    networkId: Int!
+    """The exchange address to filter by (optional)."""
+    exchangeAddress: String
+  ): GetNetworkStatsResponse
+  """Returns transactions for a pair."""
+  getTokenEvents(
+    """The maximum number of transactions to return."""
+    limit: Int
+    """The query filters to apply to the results."""
+    query: EventsQueryInput!
+    """The cursor to use for pagination."""
+    cursor: String
+    """The order to receive the token events. Can be `DESC` (default) or `ASC`."""
+    direction: RankingDirection
+  ): EventConnection
+  """Returns a list of token events for a given maker across all pairs."""
+  getTokenEventsForMaker(
+    """The maximum number of events to return."""
+    limit: Int
+    """The query filters to apply to the results."""
+    query: MakerEventsQueryInput!
+    """The cursor to use for pagination."""
+    cursor: String
+    """The order to receive the token events. Can be `DESC` (default) or `ASC`."""
+    direction: RankingDirection
+  ): MakerEventConnection
+  """Returns real-time or historical prices for a list of tokens, fetched in batches."""
+  getTokenPrices(
+    """A list of `GetPriceInput`s. Accepts a maximum of 25 inputs (anything over will be truncated)."""
+    inputs: [GetPriceInput]
+  ): [Price]
+  """Returns bar chart data to track price changes over time."""
+  getTokenBars(
+    """The ID of the pair or token (`pairAddress:networkId` or `tokenAddress:networkId`). If a token contract address is provided, the token's top pair is used. For example, `0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2:1` returns WETH's top pair on Ethereum."""
+    symbol: String!
+    """The unix timestamp for the start of the requested range."""
+    from: Int!
+    """The unix timestamp for the end of the requested range."""
+    to: Int!
+    """The time frame for each candle. Available options are `1S`, `5S`, `15S`, `30S`, `1`, `5`, `15`, `30`, `60`, `240`, `720`, `1D`, `7D`. Resolutions lower than 1 minute are only updated for the last 24 hours due to the volume of data produced."""
+    resolution: String!
+    """The currency to use for the response. Can be `USD` or `TOKEN`. Default is `USD`. Use `currencyCode: TOKEN` for native token pricing."""
+    currencyCode: QuoteCurrency
+    """Whether to remove leading null values from the response. Default is `false`. To fetch a token's entire history, set resolution to `1D`, `from` value to `0` and `removeLeadingNullValues` to `true`."""
+    removeLeadingNullValues: Boolean
+    """Whether to remove empty bars from the response. This is useful for eliminating gaps in low-activity tokens. Default is `false`."""
+    removeEmptyBars: Boolean
+    """The type of statistics returned. Can be `FILTERED` or `UNFILTERED`. Default is `UNFILTERED`."""
+    statsType: TokenPairStatisticsType
+    """Guarantees number of bars returned is at most this number. Use `countback: 1500` with `from: 0` for maximum results."""
+    countback: Int
+  ): TokenBarsResponse
+  """Returns bar chart data to track price changes over time."""
+  getBars(
+    """The ID of the pair or token (`pairAddress:networkId` or `tokenAddress:networkId`). If a token contract address is provided, the token's top pair is used. For example, `0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2:1` returns WETH's top pair on Ethereum."""
+    symbol: String!
+    """The unix timestamp for the start of the requested range."""
+    from: Int!
+    """The unix timestamp for the end of the requested range."""
+    to: Int!
+    """The time frame for each candle. Available options are `1S`, `5S`, `15S`, `30S`, `1`, `5`, `15`, `30`, `60`, `240`, `720`, `1D`, `7D`. Resolutions lower than 1 minute are only updated for the last 24 hours due to the volume of data produced."""
+    resolution: String!
+    """The currency to use for the response. Can be `USD` or `TOKEN`. Default is `USD`. Use `currencyCode: TOKEN` for native token pricing."""
+    currencyCode: String
+    """Whether to remove leading null values from the response. Default is `false`. To fetch a token's entire history, set resolution to `1D`, `from` value to `0` and `removeLeadingNullValues` to `true`."""
+    removeLeadingNullValues: Boolean
+    """Whether to remove empty bars from the response. This is useful for eliminating gaps in low-activity tokens. Default is `false`."""
+    removeEmptyBars: Boolean
+    """The token of interest within the token's top pair. Can be `token0` or `token1`. If omitted, the base token is inferred automatically. You can invert the pair by quoting the other token."""
+    quoteToken: QuoteToken
+    """The type of statistics returned. Can be `FILTERED` or `UNFILTERED`. Default is `UNFILTERED`."""
+    statsType: TokenPairStatisticsType
+    """Guarantees number of bars returned is at most this number. Use `countback: 1500` with `from: 0` for maximum results."""
+    countback: Int
+    """Specify the type of symbol you want to fetch values for. Can be `TOKEN` or `POOL`."""
+    symbolType: SymbolType
+  ): BarsResponse
+  """Returns the percentage of a token's total supply held collectively by its top 10 holders."""
+  top10HoldersPercent(
+    tokenId: String!
+  ): Float
+  """Returns a list of decentralized exchange metadata."""
+  getExchanges(
+    """Get exchanges with missing fields. Default is `false`."""
+    showNameless: Boolean
+  ): [Exchange!]!
+  """Returns a URL for a pair chart."""
+  chartUrls(
+    """Input required to fetch a pair chart."""
+    input: ChartInput!
+  ): ChartUrlsResponse
+  """Returns a list of event labels for a pair."""
+  getEventLabels(
+    """The ID of the pair (`address:networkId`)."""
+    id: String!
+    """The maximum number of event labels to return."""
+    limit: Int
+    """The cursor to use for pagination."""
+    cursor: String
+    """The order to receive the token event labels. Can be `DESC` (default) or `ASC`."""
+    direction: RankingDirection
+  ): EventLabelConnection
+  """Returns a list of token lifecycle events."""
+  tokenLifecycleEvents(
+    """The maximum number of events to return."""
+    limit: Int
+    """The query filters to apply to the results."""
+    query: TokenLifecycleEventsQueryInput!
+    """The cursor to use for pagination."""
+    cursor: String
+  ): TokenLifecycleEventConnection
+  """Returns a single token by its address & network id."""
+  token(
+    """Input for a token ID."""
+    input: TokenInput!
+  ): EnhancedToken!
+  """Returns a list of tokens by their addresses & network id, with pagination."""
+  tokens(
+    """A list of token ID input."""
+    ids: [TokenInput!]
+  ): [EnhancedToken]!
+  """Returns metadata for a pair of tokens."""
+  pairMetadata(
+    """The ID of the pair (`address:networkId`)."""
+    pairId: String!
+    """The token of interest within the pair. Can be `token0` or `token1`."""
+    quoteToken: QuoteToken
+    """The type of statistics returned. Can be `FILTERED` or `UNFILTERED`. Default is `UNFILTERED`."""
+    statsType: TokenPairStatisticsType
+  ): PairMetadata!
+  """Returns a list of pairs containing a given token."""
+  listPairsForToken(
+    """The maximum number of pairs to return."""
+    limit: Int
+    """The network ID the token is deployed on."""
+    networkId: Int!
+    """The contract address of the token."""
+    tokenAddress: String!
+  ): [Pair]!
+  """Returns a list of pair metadata for a token."""
+  listPairsWithMetadataForToken(
+    """The maximum number of pairs to return."""
+    limit: Int
+    """The network ID the token is deployed on."""
+    networkId: Int!
+    """The contract address of the token."""
+    tokenAddress: String!
+  ): ListPairsForTokenResponse!
+  """Returns a list of token simple chart data (sparklines) for the given tokens."""
+  tokenSparklines(
+    input: TokenSparklineInput!
+  ): [TokenSparkline!]!
+  """Returns list of token balances that a wallet has."""
+  balances(
+    input: BalancesInput!
+  ): BalancesResponse!
+  """Returns list of wallets that hold a given token, ordered by holdings descending. Also has the unique count of holders for that token."""
+  holders(
+    input: HoldersInput!
+  ): HoldersResponse!
+  """Returns liquidity locks for a given pair."""
+  liquidityLocks(
+    """The address of the pair."""
+    pairAddress: String
+    """The address of the token."""
+    tokenAddress: String
+    """The network id of the pair."""
+    networkId: Int!
+    """A cursor for use in pagination."""
+    cursor: String
+  ): LiquidityLockConnection
+  """Returns liquidity metadata for a given pair. Includes liquidity lock data."""
+  liquidityMetadata(
+    """The address of the pair."""
+    pairAddress: String!
+    """The network id of the pair."""
+    networkId: Int!
+  ): LiquidityMetadata
+  """Returns liquidity metadata for a given token. Includes liquidity lock data for up to 100 pairs that the token is in."""
+  liquidityMetadataByToken(
+    """The address of the token."""
+    tokenAddress: String!
+    """The network id of the token."""
+    networkId: Int!
+  ): LiquidityMetadataByToken!
+  """Once a wallet backfill has been triggered, this query can be used to check the status of the backfill."""
+  walletAggregateBackfillState(
+    input: WalletAggregateBackfillStateInput!
+  ): WalletAggregateBackfillStateResponse!
+  """Returns a list of top traders for a given token."""
+  tokenTopTraders(
+    input: TokenTopTradersInput!
+  ): TokenTopTradersConnection!
+  """Returns a list of wallets based on a variety of filters."""
+  filterWallets(
+    input: FilterWalletsInput!
+  ): WalletFilterConnection!
+  """Returns a list of wallets with stats narrowed down to a specific token."""
+  filterTokenWallets(
+    input: FilterTokenWalletsInput!
+  ): TokenWalletFilterConnection!
+  """Returns detailed stats for a wallet."""
+  detailedWalletStats(
+    input: DetailedWalletStatsInput!
+  ): DetailedWalletStats
+  """Returns a chart of a wallet's activity."""
+  walletChart(
+    input: WalletChartInput!
+  ): WalletChartResponse
+  """Returns windowed and all-time stats for a prediction market."""
+  detailedPredictionMarketStats(
+    """Input parameters used to select a market and stat windows."""
+    input: DetailedPredictionMarketStatsInput!
+  ): DetailedPredictionMarketStats
+  """Returns windowed and all-time stats for a prediction event."""
+  detailedPredictionEventStats(
+    """Input parameters used to select an event and stat windows."""
+    input: DetailedPredictionEventStatsInput!
+  ): DetailedPredictionEventStats
+  """Returns windowed and all-time stats for a prediction trader."""
+  detailedPredictionTraderStats(
+    """Input parameters used to select a trader and stat windows."""
+    input: DetailedPredictionTraderStatsInput!
+  ): DetailedPredictionTraderStats
+  """Returns per-market performance stats for a specific trader."""
+  predictionTraderMarketsStats(
+    """Input parameters used to select a trader and optional market constraints."""
+    input: PredictionTraderMarketsStatsInput!
+  ): PredictionTraderMarketsStatsConnection!
+  """Returns bar data for a prediction trader over a time range."""
+  predictionTraderBars(
+    """Input parameters used to select a trader, range, and resolution."""
+    input: PredictionTraderBarsInput!
+  ): PredictionTraderBarsResponse!
+  """Returns OHLC-style bar data for a prediction market."""
+  predictionMarketBars(
+    """Input parameters used to select a market, range, and resolution."""
+    input: PredictionMarketBarsInput!
+  ): PredictionMarketBarsResponse
+  """Returns bar data for a prediction event."""
+  predictionEventBars(
+    """Input parameters used to select an event, range, and resolution."""
+    input: PredictionEventBarsInput!
+  ): PredictionEventBarsResponse
+  """Returns bar data for top markets inside a prediction event."""
+  predictionEventTopMarketsBars(
+    """Input parameters used to select an event, number of markets, and time settings."""
+    input: PredictionEventTopMarketsBarsInput!
+  ): PredictionEventTopMarketsBarsResponse
+  """Returns prediction trades with cursor-based pagination."""
+  predictionTrades(
+    """Input parameters used to filter prediction trades."""
+    input: PredictionTradesInput!
+  ): PredictionTradesConnection
+  """Returns prediction markets by ID."""
+  predictionMarkets(
+    """Input parameters containing market IDs to fetch."""
+    input: PredictionMarketsInput!
+  ): [PredictionMarket!]!
+  """Returns prediction traders by ID."""
+  predictionTraders(
+    """Input parameters containing trader IDs to fetch."""
+    input: PredictionTradersInput!
+  ): [PredictionTrader!]!
+  """Returns token holder balances for a prediction market."""
+  predictionTokenHolders(
+    """Input parameters used to select the market/token and pagination settings."""
+    input: PredictionTokenHoldersInput!
+  ): PredictionTokenHoldersConnection
+  """Filters prediction events using optional text, IDs, and ranking criteria."""
+  filterPredictionEvents(
+    """A set of filters to apply."""
+    filters: PredictionEventFilters
+    """A phrase to search for. Can match event question, tags, or description."""
+    phrase: String
+    """A list of event IDs to filter by."""
+    eventIds: [String!]
+    """A list of event IDs to exclude from results."""
+    excludeEventIds: [String!]
+    """A list of ranking attributes to apply."""
+    rankings: [PredictionEventRanking!]
+    """Sort order for markets within each returned event. Defaults to SMART."""
+    marketSort: PredictionEventMarketSort
+    """The maximum number of events to return."""
+    limit: Int
+    """Where in the list the server should start when returning items."""
+    offset: Int
+  ): PredictionEventFilterConnection
+  """Returns available prediction categories and nested subcategories."""
+  predictionCategories: [PredictionCategory!]!
+  """Filters prediction markets using optional text, IDs, event constraints, and ranking criteria."""
+  filterPredictionMarkets(
+    """A set of filters to apply."""
+    filters: PredictionMarketFilters
+    """A phrase to search for. Can match market label, outcome labels, or event label."""
+    phrase: String
+    """A list of market IDs to filter by."""
+    marketIds: [String!]
+    """A list of market IDs to exclude from results."""
+    excludeMarketIds: [String!]
+    """A list of event IDs to filter markets by (returns markets belonging to these events)."""
+    eventIds: [String!]
+    """A list of event IDs to exclude (excludes markets belonging to these events)."""
+    excludeEventIds: [String!]
+    """A list of ranking attributes to apply."""
+    rankings: [PredictionMarketRanking!]
+    """The maximum number of markets to return."""
+    limit: Int
+    """Where in the list the server should start when returning items."""
+    offset: Int
+  ): PredictionMarketFilterConnection
+  """Filters trader-market records using trader, market, event, and ranking criteria."""
+  filterPredictionTraderMarkets(
+    """A set of filters to apply."""
+    filters: PredictionTraderMarketFilters
+    """A phrase to search for. Can match trader alias, market label, or event label."""
+    phrase: String
+    """A list of trader IDs to filter by."""
+    traderIds: [String!]
+    """A list of trader IDs to exclude from results."""
+    excludeTraderIds: [String!]
+    """A list of market IDs to filter by."""
+    marketIds: [String!]
+    """A list of market IDs to exclude from results."""
+    excludeMarketIds: [String!]
+    """A list of event IDs to filter by (returns records for markets in these events)."""
+    eventIds: [String!]
+    """A list of event IDs to exclude."""
+    excludeEventIds: [String!]
+    """A list of ranking attributes to apply."""
+    rankings: [PredictionTraderMarketRanking!]
+    """The maximum number of results to return."""
+    limit: Int
+    """Where in the list the server should start when returning items."""
+    offset: Int
+  ): PredictionTraderMarketFilterConnection
+  """Filters prediction traders using optional text, IDs, and ranking criteria."""
+  filterPredictionTraders(
+    """A set of filters to apply."""
+    filters: PredictionTraderFilters
+    """A phrase to search for. Can match trader alias, address, or venue ID."""
+    phrase: String
+    """A list of trader IDs to filter by."""
+    traderIds: [String!]
+    """A list of trader IDs to exclude from results."""
+    excludeTraderIds: [String!]
+    """A list of ranking attributes to apply."""
+    rankings: [PredictionTraderRanking!]
+    """The maximum number of results to return."""
+    limit: Int
+    """Where in the list the server should start when returning items."""
+    offset: Int
+  ): PredictionTraderFilterConnection
+  """Returns community gathered notes."""
+  getCommunityNotes(
+    input: CommunityNotesInput
+  ): CommunityNotesResponse!
+}

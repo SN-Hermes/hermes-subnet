@@ -13,6 +13,7 @@ class GraphqlProvider:
     """Supported GraphQL provider types."""
     SUBQL = "subql"
     THE_GRAPH = "thegraph"
+    CODEX = "codex"
     UNKNOWN = "unknown"
     
     @classmethod

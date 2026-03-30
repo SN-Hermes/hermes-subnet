@@ -35,7 +35,7 @@ Validator performance directly affects rewards: well-performing validators earn 
 - OpenRouter or OpenAI API key for LLM access
 
 ## Minimum Hardware Requirements
-- CPU: 4+ cores
+- CPU: 8+ cores
 - RAM: 16GB+
 
 
@@ -147,6 +147,10 @@ SCORE_LLM_MODEL=z-ai/glm-4.7
 # The Graph API token for querying subgraph data, needed for TheGraph projects
 # free api token can be obtained from https://thegraph.com/docs/en/subgraphs/querying/managing-api-keys/
 THEGRAPH_API_TOKEN=xx
+
+# The Codex API key for querying Codex data. needed for Codex projects
+# free api key can be obtained from https://dashboard.codex.io/dashboard/api-keys
+CODEX_API_TOKEN=xx
 ```
 
 Configuration Parameters:

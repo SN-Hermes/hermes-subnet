@@ -1,4 +1,5 @@
 import asyncio
+import json
 import os
 from pathlib import Path
 import time
@@ -9,9 +10,10 @@ from langchain_core.messages import HumanMessage
 import numpy as np
 import torch
 from agent.stats import Phase, TokenUsageMetrics
+from agent.subquery_graphql_agent.node_types import GraphqlProvider
 from common import utils
 from common.enums import ErrorCode
-from common.prompt_template import SCORE_PROMPT, create_scoring_json
+from common.prompt_template import CODEX_SCORE_PROMPT, SCORE_PROMPT, create_scoring_json
 from common.prompt_injection_defense import sanitize_for_evaluation
 from common.protocol import SyntheticNonStreamSynapse
 from hermes.validator.ema import EMAUpdater
@@ -40,8 +42,9 @@ class ScorerManager:
         cid_hash: str = "",
         token_usage_metrics: TokenUsageMetrics | None = None,
         min_latency_improvement_ratio: float = 0.2,
-        round_id: int = 0
-    ) -> Tuple[List[float], List[float], List[float], List[float], List[str]]:
+        round_id: int = 0,
+        node_type: str = ""
+    ) -> Tuple[List[float], List[float], List[float], List[float], List[str], List[dict]]:
         elapse_time = [r.elapsed_time for r in miner_synapses]
         elapse_weights = [
             utils.fix_float(
@@ -64,6 +67,9 @@ class ScorerManager:
                 async with semaphore:
                     # Add a small random delay (200-800ms) to avoid rate limits
                     await asyncio.sleep(random.uniform(0.2, 0.8))
+                    if node_type == GraphqlProvider.CODEX:
+                        return await self.cal_ground_truth_score_codex(ground_truth, miner_synapse, cid_hash, token_usage_metrics, round_id=round_id)
+                    
                     return await self.cal_ground_truth_score(ground_truth, miner_synapse, cid_hash, token_usage_metrics, round_id=round_id)
             
             valid_scores = await asyncio.gather(
@@ -73,17 +79,20 @@ class ScorerManager:
             valid_scores = []
         
         # Reconstruct ground_truth_scores_raw in original order
-        ground_truth_scores_raw = ["0.0"] * len(miner_synapses)
+        ground_truth_scores_value = ["0.0"] * len(miner_synapses)
+        ground_truth_scores_raw = [{"answer": 0, "query": 0, "total": 0}] * len(miner_synapses)
         ground_truth_scores_error = [""] * len(miner_synapses)
+
         for (_, i), (score, error) in zip(valid_miners, valid_scores):
+            ground_truth_scores_value[i] = score.get('total') if isinstance(score, dict) else score
             ground_truth_scores_raw[i] = score
             ground_truth_scores_error[i] = error
 
-        ground_truth_scores = [min(utils.fix_float(utils.safe_float_convert(s)), 10.0) for s in ground_truth_scores_raw]
+        ground_truth_scores = [min(utils.fix_float(utils.safe_float_convert(s)), 10.0) for s in ground_truth_scores_value]
         zip_scores = [utils.fix_float(s * w) for s, w in zip(ground_truth_scores, elapse_weights)]
 
-        logger.debug(f"[ScorerManager] - {challenge_id} ground_truth_scores: {ground_truth_scores_raw}, elapse_time: {elapse_time}, elapse_weights: {elapse_weights}, zip_scores: {zip_scores}")
-        return zip_scores, ground_truth_scores, elapse_weights, elapse_time, ground_truth_scores_error
+        logger.debug(f"[ScorerManager] - {challenge_id} ground_truth_scores: {ground_truth_scores_value}, elapse_time: {elapse_time}, elapse_weights: {elapse_weights}, zip_scores: {zip_scores}")
+        return zip_scores, ground_truth_scores, elapse_weights, elapse_time, ground_truth_scores_error, ground_truth_scores_raw
 
     async def cal_ground_truth_score(
             self,
@@ -125,6 +134,72 @@ class ScorerManager:
 
         score = summary_response.content.strip() if summary_response.content else "0.0"
         return score, ""
+
+    async def cal_ground_truth_score_codex(
+            self,
+            ground_truth: str,
+            miner_synapse: SyntheticNonStreamSynapse,
+            cid_hash: str = "",
+            token_usage_metrics: TokenUsageMetrics | None = None,
+            round_id: int = 0
+        ) -> tuple[dict, str]:
+        if not miner_synapse.response or miner_synapse.status_code != 200:
+            logger.debug(f"[ScorerManager] - cal_ground_truth_score: empty or error response from miner_synapse, status_code: {miner_synapse.status_code}, response: {miner_synapse.response}")
+            return  {
+                "answer": 0,
+                "query": 0,
+                "total": 0
+            }, f"empty or error.(status_code: {miner_synapse.status_code})"
+
+        suspicious_uids = self.ipc_meta_config.get("suspicious_uids", []) if self.ipc_meta_config else []
+        if miner_synapse.uid in suspicious_uids:
+            logger.debug(f"[ScorerManager] - cal_ground_truth_score: miner_synapse {miner_synapse.uid} is in suspicious_uids")
+            miner_synapse.status_code = ErrorCode.SUSPICIOUS.value
+            miner_synapse.error = "Miner is suspicious"
+            return {
+                "answer": 0,
+                "query": 0,
+                "total": 0
+            }, "Miner is suspicious"
+
+        json_data = create_scoring_json(ground_truth, miner_synapse.response)
+        
+        # Directly insert JSON data into the template to avoid format() conflicts with JSON braces
+        question_prompt = CODEX_SCORE_PROMPT.template.replace("{json_data}", json_data)
+        try :
+            summary_response = await self.llm_score.ainvoke([HumanMessage(content=question_prompt)])
+            if token_usage_metrics is not None:
+                d = token_usage_metrics.parse(
+                    cid_hash, phase=Phase.GENERATE_MINER_GROUND_TRUTH_SCORE, response=summary_response, extra={"round_id": round_id}
+                )
+                token_usage_metrics.append(d)
+
+        except Exception as e:
+            logger.error(f"[ScorerManager] - LLM scoring error: {e}")
+            return {
+                "answer": 0,
+                "query": 0,
+                "total": 0
+            }, f"LLM scoring error: {e}"
+        
+        raw_json = summary_response.content.strip() if summary_response.content else "{}"
+        sanitized_json = utils.sanitize_json_string(raw_json)
+        
+        try:
+            json_data: dict = json.loads(sanitized_json)
+        except json.JSONDecodeError:
+            logger.error(f"[ScorerManager] - LLM scoring error: invalid JSON response. Original: {raw_json}, Sanitized: {sanitized_json}")
+            return {
+                "answer": 0,
+                "query": 0,
+                "total": 0
+            }, f"LLM scoring error: invalid JSON response: {raw_json}"
+
+        return {
+            "answer": json_data.get("answer", 0),
+            "query": json_data.get("query", 0),
+            "total": json_data.get("total", 0)
+        }, ""
 
     def update_scores(self, 
         uids: List[int], 

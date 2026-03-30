@@ -169,7 +169,13 @@ testing/
 
 .DS_Store
 
-projects/
+projects/*
+!projects/miner/
+!projects/validator/
+projects/miner/*
+projects/validator/*
+!projects/miner/codex_de839e3d/
+!projects/validator/codex_de839e3d/
 .data/
 
 # Analysis documentation

@@ -186,8 +186,17 @@ class Settings:
                                 os.environ[key] = value
                                 logger.info(f"Reloaded THEGRAPH_API_TOKEN from {self._env_file}")
                             break
+
+                        elif line.startswith('CODEX_API_TOKEN='):
+                            key, value = line.split('=', 1)
+                            old_value = os.environ.get(key)
+                            if old_value != value:
+                                os.environ[key] = value
+                                logger.info(f"Reloaded CODEX_API_TOKEN from {self._env_file}")
+                            break
+
             except Exception as e:
-                logger.error(f"Failed to reread THEGRAPH_API_TOKEN from {self._env_file}: {e}")
+                logger.error(f"Failed to reread API_TOKEN from {self._env_file}: {e}")
 
     def inspect(self):
         uids = self.metagraph.uids
