@@ -244,6 +244,8 @@ class GraphQLAgent:
         self.llm = ChatOpenAI(
             model=model_name,
             temperature=0,
+            timeout=300,
+            max_retries=3,
             # extra_body={"thinking": {"type": "disabled"}},
         )
 

@@ -46,7 +46,7 @@ class BenchMark:
             "timestamp": int(time.time())
         }
         
-        if self.failure_uploads[round_id] >= 3:
+        if self.failure_uploads[round_id] >= 2:
             await self._send_to_server("failure", [failure_data])
             del self.failure_uploads[round_id]
 

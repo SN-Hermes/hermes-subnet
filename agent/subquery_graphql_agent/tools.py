@@ -588,18 +588,17 @@ WORKFLOW:
 - NEVER make verification queries, think thoroughly before you make a query.
 - ALWAYS limit the return with first:10 for ALL list queries as well as in the nested queries, unless told otherwise and it is smaller.
 - For time-range queries (e.g., last 7 days, 30 days, weeks), ALWAYS limit the number of results using 'first' parameter to prevent excessive data retrieval.
-- ⚠️ ZERO/EMPTY RESULTS HANDLING:
-  * If query executes successfully (✅) AND returns numeric 0, empty list [], or null → Ask yourself: "Does this answer the user's question?"
-  * Examples of VALID zero/empty results (DO NOT RETRY):
-    - "What's the total X?" → sum: 0 (means legitimately no spending)
-    - "How many items?" → count: 0 (means legitimately zero items)
-    - "List all X" → [] (means legitimately no X exists)
-    - "Get X by ID" → null (means X with this ID doesn't exist)
-  * Examples of INVALID results that need ONE retry (query technical issues):
-    - Query validation/execution error (❌ symbols in response)
-    - Wrong entity/field name (schema mismatch)
-    - Incorrect filter syntax
-  * NEVER retry the EXACT same query twice - if first execution succeeds (✅), that's the answer!"
+- ⚠️ EMPTY FIELD VALUES HANDLING:
+  * When query succeeds (✅), the returned data structure is ALWAYS valid, even if field values are null/0/[]
+  * Empty field values are NORMAL and MEANINGFUL:
+    - { sqtoken: null } → Token with this ID does NOT exist (valid answer)
+    - { totalAmount: 0 } → Total is legitimately zero (valid answer)
+    - { tokens: [] } → No tokens match the criteria (valid answer)
+    - { indexers: { nodes: [], totalCount: 0 } } → No results found (valid answer)
+  * These are NOT errors - they directly answer the user's question
+  * DO NOT make additional queries to "verify" or "find alternatives"
+  * Only retry if query FAILED (❌) with technical errors (validation/schema/syntax)
+  
 """
 
     if is_synthetic:
