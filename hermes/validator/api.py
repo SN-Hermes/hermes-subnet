@@ -27,8 +27,9 @@ async def verify_signature(request: Request):
 
     try:
         body = await request.body()
-        body_hash = f"{sha256(body).hexdigest()}"
-        logger.info(f"[API] Incoming request body sha256: {body_hash}, signature: {signature}, signed_by: {signed_by}, time_stamp: {time_stamp}")
+        message = body + time_stamp.encode('utf-8')
+        message_hash = f"{sha256(message).hexdigest()}"
+        logger.info(f"[API] Incoming request message sha256: {message_hash}, signature: {signature}, signed_by: {signed_by}, time_stamp: {time_stamp}")
 
         if signed_by not in ALLOWED_SOURCE:
             raise HTTPException(status_code=401, detail="Signer not the expected ss58 address")
@@ -38,7 +39,7 @@ async def verify_signature(request: Request):
             raise HTTPException(status_code=401, detail="Request is too old")
 
         keypair =  bt.Keypair(ss58_address=signed_by)
-        verified = keypair.verify(body_hash, bytes.fromhex(signature))
+        verified = keypair.verify(message_hash, bytes.fromhex(signature))
 
         if not verified:
             raise HTTPException(status_code=401, detail="Invalid signature")

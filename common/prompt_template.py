@@ -224,10 +224,6 @@ Step 3: Generate Question - Create ONE Numerical Question
   Apply these constraints during generation:
   
   ✅ MUST DO (SUBGRAPH-SPECIFIC):
-  • Ask about direct field values from specific entities
-  • Ask superlative queries: "Which entity has the highest [field]?", "What is the largest [field]?"
-  • Ask for top N lists: "What are the top 3 entities by [field]?"
-  • Ask about specific entity properties: "What is the [field] of entity with ID [id]?"
   • Keep questions SHORT and STRAIGHTFORWARD
   • Use business concepts that real users would understand
   • Verify the field exists in the schema

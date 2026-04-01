@@ -30,7 +30,7 @@ class QuestionGenerator:
         similarity_threshold=0.75,
         max_retries=3,
         save_path: str | None = None,
-        save_interval: int = 10
+        save_interval: int = 3
     ):
         self.max_history = max_history
         self.similarity_threshold = similarity_threshold

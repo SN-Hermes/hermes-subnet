@@ -128,7 +128,7 @@ def project_factory(config: dict = None, **kwargs) -> LocalProjectBase:
      
     if node_type == GraphqlProvider.CODEX:
         project = LocalProjectCodex()
-    elif node_type == GraphqlProvider.SUBGRAPH:
+    elif node_type == GraphqlProvider.THE_GRAPH:
         project = LocalProjectSubgraph()
     else:
         project = LocalProjectBase()
