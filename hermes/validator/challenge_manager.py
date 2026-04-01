@@ -304,7 +304,7 @@ class ChallengeManager:
                         # generate challenge
                         question, q_metrics_data, error = await question_generator.generate_question(
                             cid_hash, 
-                            p.to_project_config(),
+                            p,
                             self.llm_synthetic,
                             self.token_usage_metrics,
                             round_id=self.round_id,

@@ -11,9 +11,9 @@ from langchain_openai import ChatOpenAI
 from loguru import logger
 
 from agent.stats import Phase, TokenUsageMetrics
-from agent.subquery_graphql_agent.base import ProjectConfig, create_graphql_toolkit
+from agent.subquery_graphql_agent.base import create_graphql_toolkit
+from agent.subquery_graphql_agent.project import LocalProjectBase
 from agent.subquery_graphql_agent.tools import GraphQLSchemaInfoTool
-from common.prompt_template import SYNTHETIC_PROMPT_WITH_TOOLS, SYNTHETIC_PROMPT_FALLBACK
 
 class QuestionGenerator:
     max_history: int
@@ -57,7 +57,7 @@ class QuestionGenerator:
     async def generate_question(
             self,
             cid_hash: str,
-            project: ProjectConfig,
+            project: LocalProjectBase,
             llm: ChatOpenAI,
             token_usage_metrics: TokenUsageMetrics | None = None,
             round_id: int = 0,
@@ -82,11 +82,7 @@ class QuestionGenerator:
                 )
                 tools = toolkit.get_tools()
                 schema_info_tool: GraphQLSchemaInfoTool = tools[0]
-                prompt = SYNTHETIC_PROMPT_WITH_TOOLS.format(
-                    entity_schema=project.schema_content,
-                    recent_questions=recent_questions,
-                    postgraphile_rules=schema_info_tool.postgraphile_rules,
-                )
+                prompt = project.prompt_for_challenge_with_tools(recent_questions, schema_info_tool.postgraphile_rules)
                 temp_executor = create_react_agent(
                     model=llm,
                     tools=tools,
@@ -113,7 +109,7 @@ class QuestionGenerator:
 
         async def try_with_fallback():
             try:
-                prompt = SYNTHETIC_PROMPT_FALLBACK.format(entity_schema=project.schema_content, recent_questions=recent_questions)
+                prompt = project.prompt_for_challenge(recent_questions)
                 response = await llm.ainvoke([HumanMessage(content=prompt)])
                 question = response.content.strip()
                 d = None

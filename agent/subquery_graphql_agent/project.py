@@ -1,11 +1,12 @@
 
 import json
 from pathlib import Path
-
 from loguru import logger
+from langchain_core.prompts import PromptTemplate
 
 from .base import ProjectConfig
 from .node_types import GraphqlProvider
+import common.prompt_template as prompt_template
 
 
 class LocalProjectBase:
@@ -20,6 +21,16 @@ class LocalProjectBase:
     decline_message: str = None
     local_dir: Path = None
 
+    challenge_prompt: PromptTemplate = PromptTemplate(
+        input_variables=["entity_schema", "recent_questions"],
+        template=prompt_template.synthetic_challenge_template_V4
+    )
+
+    challenge_prompt_tools: PromptTemplate = PromptTemplate(
+        input_variables=["entity_schema", "recent_questions", "postgraphile_rules"],
+        template=prompt_template.synthetic_challenge_template_tools
+    )
+
     @property
     def save_data(self) -> dict:
         return {
@@ -33,6 +44,19 @@ class LocalProjectBase:
             "domain_capabilities": self.domain_capabilities,
             "decline_message": self.decline_message,
         }
+
+    def prompt_for_challenge(self, recent_questions: str) -> str:
+        return self.challenge_prompt.format(
+            entity_schema=self.schema_content,
+            recent_questions=recent_questions
+        )
+
+    def prompt_for_challenge_with_tools(self, recent_questions: str, postgraphile_rules: str) -> str:
+        return self.challenge_prompt_tools.format(
+            entity_schema=self.schema_content,
+            recent_questions=recent_questions,
+            postgraphile_rules=postgraphile_rules
+        )
 
     def save(self):
         self.local_dir.mkdir(parents=True, exist_ok=True)
@@ -52,6 +76,16 @@ class LocalProjectBase:
             domain_capabilities=self.domain_capabilities,
             decline_message=self.decline_message,
         )
+
+class LocalProjectSubgraph(LocalProjectBase):
+    challenge_prompt: PromptTemplate = PromptTemplate(
+        input_variables=["entity_schema", "recent_questions"],
+        template=prompt_template.synthetic_challenge_template_subgraph
+    )
+    challenge_prompt_tools: PromptTemplate = PromptTemplate(
+        input_variables=["entity_schema", "recent_questions", "postgraphile_rules"],
+        template=prompt_template.synthetic_challenge_template_subgraph_tools
+    )
 
 
 class LocalProjectCodex(LocalProjectBase):
@@ -94,6 +128,8 @@ def project_factory(config: dict = None, **kwargs) -> LocalProjectBase:
      
     if node_type == GraphqlProvider.CODEX:
         project = LocalProjectCodex()
+    elif node_type == GraphqlProvider.SUBGRAPH:
+        project = LocalProjectSubgraph()
     else:
         project = LocalProjectBase()
 
