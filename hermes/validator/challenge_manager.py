@@ -208,7 +208,12 @@ class ChallengeManager:
     async def challenge_loop(self):
         try:
             from hermes.validator.question_generator import QuestionGenerator
-            question_generator = QuestionGenerator(max_history=48, save_path=".data/question_history.json")
+            question_generator = QuestionGenerator(
+                max_history=48,
+                question_save_path=".data/question_history.json",
+                remote_played_save_path=".data/remote_played.json",
+                wallet=self.settings.wallet,
+            )
 
             block_cache: dict[str, int] = {}
             miners_counter: dict[int, tuple[int, int]] = {}  # uid -> [success_count, total_count]
@@ -281,6 +286,7 @@ class ChallengeManager:
                     weight_b = self.ipc_meta_config.get("weight_b", 30)
                     multi_coldkey_penalty = self.ipc_meta_config.get("multi_coldkey_penalty", 1)
                     ema_score_alpha = self.ipc_meta_config.get("ema_score_alpha", 0.5)
+                    project_frequency = self.ipc_meta_config.get("project_frequency", {})
                     q_metrics_data = None
                     project_phase = self.agent_manager.get_project_phase(cid_hash)
 
@@ -302,29 +308,33 @@ class ChallengeManager:
                             weight_b = 0
 
                         # generate challenge
-                        question, q_metrics_data, error = await question_generator.generate_question(
+                        question, typ, q_metrics_data, error, challenge = await question_generator.generate_question(
                             cid_hash, 
                             p,
                             self.llm_synthetic,
                             self.token_usage_metrics,
                             round_id=self.round_id,
-                            weight_a=weight_a,    # normal
-                            weight_b=weight_b     # tool
+                            weight_a=weight_a,      # normal
+                            weight_b=weight_b,      # tool
+                            project_frequency=project_frequency
                         )
-
 
                         if not question:
                             logger.warning(f"[ChallengeManager] - {cid_hash} Failed to generate question (attempt {attempt + 1}/{max_retries})")
                             error_msgs.append(f"(round: {self.round_id}, attempt: {attempt + 1}/{max_retries}, {cid_hash}) {error}")
                             continue
-                        logger.info(f"[ChallengeManager] - {cid_hash} Selected block height: {block_cache[cid_hash]}")
+
+                        overwrite_block_height = challenge.block_height if challenge and challenge.block_height else None
+
+                        overwrite_msg = f", overwrite block {overwrite_block_height}" if overwrite_block_height else ""
+                        logger.info(f"[ChallengeManager] - {cid_hash} strategy: {typ}, Selected block height: {block_cache[cid_hash]}{overwrite_msg}")
 
                         success, ground_truth, ground_cost, metrics_data, model_name = await self.generate_ground_truth(
                             cid_hash=cid_hash,
                             question=question,
                             token_usage_metrics=self.token_usage_metrics,
                             round_id=self.round_id,
-                            block_height=block_cache[cid_hash]
+                            block_height=overwrite_block_height or block_cache[cid_hash]
                         )
 
                         is_valid = success and utils.is_ground_truth_valid(ground_truth)
@@ -350,6 +360,7 @@ class ChallengeManager:
 
                         # Valid challenge generated, break retry loop
                         challenge_generated = True
+                        question_generator.mark_success(question, cid_hash, typ, challenge)
                         break
 
                     # Skip this project if all retries failed

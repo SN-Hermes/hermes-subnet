@@ -1,13 +1,35 @@
 
+import base64
+import hashlib
 import json
+import os
 from pathlib import Path
+import time
+from typing import Callable
+import aiohttp
 from loguru import logger
+from pydantic import BaseModel
 from langchain_core.prompts import PromptTemplate
+
+from common.enums import RemoteChallengeType
 
 from .base import ProjectConfig
 from .node_types import GraphqlProvider
 import common.prompt_template as prompt_template
 
+
+class RemoteChallenge(BaseModel):
+    id: int
+    type: int
+    question: str
+    instruction: str | None
+    block_height: str | None
+    max_count: int
+    version: str
+
+
+class RemoteChallengeListResponse(BaseModel):
+    challenges: list[RemoteChallenge]
 
 class LocalProjectBase:
     cid: str
@@ -20,6 +42,10 @@ class LocalProjectBase:
     domain_capabilities: list[str] = None
     decline_message: str = None
     local_dir: Path = None
+    played_challenges: set = None
+    newest_challenge: list[RemoteChallenge] = None
+    last_pull_time: float = 0  # Timestamp of last successful pull
+    pull_interval: int = 300  # Pull interval in seconds (5 minutes)
 
     challenge_prompt: PromptTemplate = PromptTemplate(
         input_variables=["entity_schema", "recent_questions"],
@@ -30,6 +56,13 @@ class LocalProjectBase:
         input_variables=["entity_schema", "recent_questions", "postgraphile_rules"],
         template=prompt_template.synthetic_challenge_template_tools
     )
+
+    challenge_prompt_topic_map: dict[str, PromptTemplate] = {
+        "v1": PromptTemplate(
+            input_variables=["entity_schema", "topic", "instruction", "recent_questions"],
+            template=prompt_template.synthetic_challenge_template_topic
+        )
+    }
 
     @property
     def save_data(self) -> dict:
@@ -58,11 +91,89 @@ class LocalProjectBase:
             postgraphile_rules=postgraphile_rules
         )
 
+    def prompt_for_challenge_with_topic(self, recent_questions: str, version: str, topic: str, instruction: str) -> str:
+        pt = self.challenge_prompt_topic_map.get(version, None)
+        if pt is None:
+            return ""
+        
+        return pt.format(
+            entity_schema=self.schema_content,
+            recent_questions=recent_questions,
+            topic=topic,
+            instruction=prompt_template.format_instruction_section(instruction)
+        )
+
+    async def pull_remote_challenges(
+        self,
+        source: str,
+        sign_func: Callable[[bytes], bytes]
+    ):
+        # Check if we should skip pulling based on frequency control
+        current_time = time.time()
+        time_since_last_pull = current_time - self.last_pull_time
+        
+        if time_since_last_pull < self.pull_interval and self.newest_challenge is not None:
+            logger.debug(f"[Benchmark] Skipping pull, last pull was {time_since_last_pull:.1f}s ago (interval: {self.pull_interval}s)")
+            return self.newest_challenge
+        
+        try:
+            timestamp = int(time.time())
+
+            payload_to_hash = {
+                "timestamp": timestamp,
+                "data": [{
+                    "cid_hash": self.cid_hash
+                }]
+            }
+
+            import msgpack
+
+            b = msgpack.packb(
+                payload_to_hash,
+                use_bin_type=True,
+                strict_types=True
+            )
+            h = hashlib.sha256(b).hexdigest()
+
+            # Convert msgpack data to base64
+            b_base64 = base64.b64encode(b).decode('utf-8')
+
+            # Step 2: Sign the hash with wallet
+            signature = f"0x{sign_func(h).hex()}"
+            
+            # Step 3: Send hash, signature, timestamp along with data
+            payload = {
+                "msgpack": b_base64,
+                "hash": h,
+                "validator": source,
+                "signature": signature,
+                "type": "pull"
+            }
+
+            async with aiohttp.ClientSession() as session:
+                async with session.post(
+                    f"{os.environ.get('BOARD_SERVICE')}/challenges",
+                    json=payload,
+                    timeout=aiohttp.ClientTimeout(total=30)
+                ) as resp:
+                    if resp.status == 200:
+                        logger.info(f"[Benchmark] Successfully pulled challenges")
+                        data = await resp.json()
+                        challenges = RemoteChallengeListResponse(**data).challenges
+                        self.newest_challenge = sorted(challenges, key=lambda ch: ch.id)
+                        self.last_pull_time = current_time
+                    else:
+                        error_text = await resp.text()
+                        logger.error(f"[Benchmark] Pull challenges failed with status {resp.status}: {error_text}")
+        except Exception as e:
+            logger.error(f"[Benchmark] Failed to pull challenges: {e}")
+        
+        return self.newest_challenge
+
     def save(self):
         self.local_dir.mkdir(parents=True, exist_ok=True)
         with open(self.local_dir / "config.json", "w") as f:
             json.dump(self.save_data, f, indent=2)
-
     
     def to_project_config(self) -> ProjectConfig:
         return ProjectConfig(
@@ -87,12 +198,20 @@ class LocalProjectSubgraph(LocalProjectBase):
         template=prompt_template.synthetic_challenge_template_subgraph_tools
     )
 
+    challenge_prompt_topic_map: dict[str, PromptTemplate] = {
+        "v1": PromptTemplate(
+            input_variables=["entity_schema", "topic", "instruction", "recent_questions"],
+            template=prompt_template.synthetic_challenge_template_topic_subgraph
+        )
+    }
+
 
 class LocalProjectCodex(LocalProjectBase):
     full_schema_content: str
 
     def save(self):
         config_data = self.save_data
+        config_data["schema_content"] = ""
         with open(self.local_dir / "config.json", "w") as f:
             json.dump(config_data, f, indent=2)
         
@@ -143,6 +262,10 @@ def project_factory(config: dict = None, **kwargs) -> LocalProjectBase:
     project.domain_capabilities = config.get('domain_capabilities', [])
     project.decline_message = config.get('decline_message', None)
     project.local_dir = config.get('local_dir', None)
+    project.played_challenges = set()
+    project.newest_challenge = None
+    project.last_pull_time = 0  # Initialize last pull time
+    project.pull_interval = 300  # 5 minutes in seconds
 
 
     if isinstance(project, LocalProjectCodex):

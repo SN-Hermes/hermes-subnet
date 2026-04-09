@@ -557,6 +557,7 @@ async def main():
                         new_burn_ratio = new_meta.data.get("burn_ratio", 0)
                         new_multi_coldkey_penalty = new_meta.data.get("multi_coldkey_penalty", 1)
                         new_ema_score_alpha = new_meta.data.get("ema_score_alpha", 0.5)
+                        new_project_frequency = new_meta.data.get("project_frequency", {})
 
                         current_config = dict(ipc_meta_config)  # Convert to regular dict to minimize lock time
                         
@@ -612,6 +613,11 @@ async def main():
                         if new_ema_score_alpha != current_config.get("ema_score_alpha", 0.5):
                             updates["ema_score_alpha"] = new_ema_score_alpha
                             logger.info(f"Updating ema_score_alpha from {current_config.get('ema_score_alpha', 0.5)} to {new_ema_score_alpha}")
+
+                        current_project_frequency = current_config.get("project_frequency", {})
+                        if new_project_frequency != current_project_frequency:
+                            updates["project_frequency"] = new_project_frequency
+                            logger.info(f"Updating project_frequency from {current_project_frequency} to {new_project_frequency}")
 
                         if updates:
                             ipc_meta_config.update(updates)

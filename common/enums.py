@@ -55,3 +55,7 @@ class ProjectPhase(Enum):
     HATCHING = 1
     WARMUP = 2
 
+class RemoteChallengeType(Enum):
+    FIXED = 1
+    TOPIC = 2
+

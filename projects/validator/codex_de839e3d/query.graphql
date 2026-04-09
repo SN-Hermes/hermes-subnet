@@ -1,10 +1,4 @@
 type Query {
-  """Get all active short-lived api tokens for this api key"""
-  apiTokens: [ApiToken!]!
-  """Get the active short-lived api token for this api key by the short-lived token"""
-  apiToken(
-    token: String!
-  ): ApiToken!
   """Returns block data for the input blockNumbers or timestamps, maximum 25 inputs."""
   blocks(
     input: BlocksInput!
@@ -16,19 +10,6 @@ type Query {
     """The list of network IDs."""
     networkIds: [Int!]!
   ): [MetadataResponse!]
-  """Returns a user's list of webhooks."""
-  getWebhooks(
-    """The cursor to use for pagination."""
-    cursor: String
-    """webhookId: The id of the webhook you want to retrieve."""
-    webhookId: String
-    """bucketId: The bucketId of the webhooks you want to retrieve. Note that bucketId and webhookId are mutually exclusive, do not send both."""
-    bucketId: String
-    """bucketSortkey: The bucketSortkey of the webhooks you want to retrieve."""
-    bucketSortkey: String
-    """limit: The maximum number of webhooks to return."""
-    limit: Int
-  ): GetWebhooksResponse
   """Returns a list of network configurations."""
   getNetworkConfigs(
     networkIds: [Int!]
@@ -219,11 +200,6 @@ type Query {
     """Get exchanges with missing fields. Default is `false`."""
     showNameless: Boolean
   ): [Exchange!]!
-  """Returns a URL for a pair chart."""
-  chartUrls(
-    """Input required to fetch a pair chart."""
-    input: ChartInput!
-  ): ChartUrlsResponse
   """Returns a list of event labels for a pair."""
   getEventLabels(
     """The ID of the pair (`address:networkId`)."""
@@ -285,207 +261,6 @@ type Query {
   tokenSparklines(
     input: TokenSparklineInput!
   ): [TokenSparkline!]!
-  """Returns list of token balances that a wallet has."""
-  balances(
-    input: BalancesInput!
-  ): BalancesResponse!
-  """Returns list of wallets that hold a given token, ordered by holdings descending. Also has the unique count of holders for that token."""
-  holders(
-    input: HoldersInput!
-  ): HoldersResponse!
-  """Returns liquidity locks for a given pair."""
-  liquidityLocks(
-    """The address of the pair."""
-    pairAddress: String
-    """The address of the token."""
-    tokenAddress: String
-    """The network id of the pair."""
-    networkId: Int!
-    """A cursor for use in pagination."""
-    cursor: String
-  ): LiquidityLockConnection
-  """Returns liquidity metadata for a given pair. Includes liquidity lock data."""
-  liquidityMetadata(
-    """The address of the pair."""
-    pairAddress: String!
-    """The network id of the pair."""
-    networkId: Int!
-  ): LiquidityMetadata
-  """Returns liquidity metadata for a given token. Includes liquidity lock data for up to 100 pairs that the token is in."""
-  liquidityMetadataByToken(
-    """The address of the token."""
-    tokenAddress: String!
-    """The network id of the token."""
-    networkId: Int!
-  ): LiquidityMetadataByToken!
-  """Once a wallet backfill has been triggered, this query can be used to check the status of the backfill."""
-  walletAggregateBackfillState(
-    input: WalletAggregateBackfillStateInput!
-  ): WalletAggregateBackfillStateResponse!
-  """Returns a list of top traders for a given token."""
-  tokenTopTraders(
-    input: TokenTopTradersInput!
-  ): TokenTopTradersConnection!
-  """Returns a list of wallets based on a variety of filters."""
-  filterWallets(
-    input: FilterWalletsInput!
-  ): WalletFilterConnection!
-  """Returns a list of wallets with stats narrowed down to a specific token."""
-  filterTokenWallets(
-    input: FilterTokenWalletsInput!
-  ): TokenWalletFilterConnection!
-  """Returns detailed stats for a wallet."""
-  detailedWalletStats(
-    input: DetailedWalletStatsInput!
-  ): DetailedWalletStats
-  """Returns a chart of a wallet's activity."""
-  walletChart(
-    input: WalletChartInput!
-  ): WalletChartResponse
-  """Returns windowed and all-time stats for a prediction market."""
-  detailedPredictionMarketStats(
-    """Input parameters used to select a market and stat windows."""
-    input: DetailedPredictionMarketStatsInput!
-  ): DetailedPredictionMarketStats
-  """Returns windowed and all-time stats for a prediction event."""
-  detailedPredictionEventStats(
-    """Input parameters used to select an event and stat windows."""
-    input: DetailedPredictionEventStatsInput!
-  ): DetailedPredictionEventStats
-  """Returns windowed and all-time stats for a prediction trader."""
-  detailedPredictionTraderStats(
-    """Input parameters used to select a trader and stat windows."""
-    input: DetailedPredictionTraderStatsInput!
-  ): DetailedPredictionTraderStats
-  """Returns per-market performance stats for a specific trader."""
-  predictionTraderMarketsStats(
-    """Input parameters used to select a trader and optional market constraints."""
-    input: PredictionTraderMarketsStatsInput!
-  ): PredictionTraderMarketsStatsConnection!
-  """Returns bar data for a prediction trader over a time range."""
-  predictionTraderBars(
-    """Input parameters used to select a trader, range, and resolution."""
-    input: PredictionTraderBarsInput!
-  ): PredictionTraderBarsResponse!
-  """Returns OHLC-style bar data for a prediction market."""
-  predictionMarketBars(
-    """Input parameters used to select a market, range, and resolution."""
-    input: PredictionMarketBarsInput!
-  ): PredictionMarketBarsResponse
-  """Returns bar data for a prediction event."""
-  predictionEventBars(
-    """Input parameters used to select an event, range, and resolution."""
-    input: PredictionEventBarsInput!
-  ): PredictionEventBarsResponse
-  """Returns bar data for top markets inside a prediction event."""
-  predictionEventTopMarketsBars(
-    """Input parameters used to select an event, number of markets, and time settings."""
-    input: PredictionEventTopMarketsBarsInput!
-  ): PredictionEventTopMarketsBarsResponse
-  """Returns prediction trades with cursor-based pagination."""
-  predictionTrades(
-    """Input parameters used to filter prediction trades."""
-    input: PredictionTradesInput!
-  ): PredictionTradesConnection
-  """Returns prediction markets by ID."""
-  predictionMarkets(
-    """Input parameters containing market IDs to fetch."""
-    input: PredictionMarketsInput!
-  ): [PredictionMarket!]!
-  """Returns prediction traders by ID."""
-  predictionTraders(
-    """Input parameters containing trader IDs to fetch."""
-    input: PredictionTradersInput!
-  ): [PredictionTrader!]!
-  """Returns token holder balances for a prediction market."""
-  predictionTokenHolders(
-    """Input parameters used to select the market/token and pagination settings."""
-    input: PredictionTokenHoldersInput!
-  ): PredictionTokenHoldersConnection
-  """Filters prediction events using optional text, IDs, and ranking criteria."""
-  filterPredictionEvents(
-    """A set of filters to apply."""
-    filters: PredictionEventFilters
-    """A phrase to search for. Can match event question, tags, or description."""
-    phrase: String
-    """A list of event IDs to filter by."""
-    eventIds: [String!]
-    """A list of event IDs to exclude from results."""
-    excludeEventIds: [String!]
-    """A list of ranking attributes to apply."""
-    rankings: [PredictionEventRanking!]
-    """Sort order for markets within each returned event. Defaults to SMART."""
-    marketSort: PredictionEventMarketSort
-    """The maximum number of events to return."""
-    limit: Int
-    """Where in the list the server should start when returning items."""
-    offset: Int
-  ): PredictionEventFilterConnection
-  """Returns available prediction categories and nested subcategories."""
-  predictionCategories: [PredictionCategory!]!
-  """Filters prediction markets using optional text, IDs, event constraints, and ranking criteria."""
-  filterPredictionMarkets(
-    """A set of filters to apply."""
-    filters: PredictionMarketFilters
-    """A phrase to search for. Can match market label, outcome labels, or event label."""
-    phrase: String
-    """A list of market IDs to filter by."""
-    marketIds: [String!]
-    """A list of market IDs to exclude from results."""
-    excludeMarketIds: [String!]
-    """A list of event IDs to filter markets by (returns markets belonging to these events)."""
-    eventIds: [String!]
-    """A list of event IDs to exclude (excludes markets belonging to these events)."""
-    excludeEventIds: [String!]
-    """A list of ranking attributes to apply."""
-    rankings: [PredictionMarketRanking!]
-    """The maximum number of markets to return."""
-    limit: Int
-    """Where in the list the server should start when returning items."""
-    offset: Int
-  ): PredictionMarketFilterConnection
-  """Filters trader-market records using trader, market, event, and ranking criteria."""
-  filterPredictionTraderMarkets(
-    """A set of filters to apply."""
-    filters: PredictionTraderMarketFilters
-    """A phrase to search for. Can match trader alias, market label, or event label."""
-    phrase: String
-    """A list of trader IDs to filter by."""
-    traderIds: [String!]
-    """A list of trader IDs to exclude from results."""
-    excludeTraderIds: [String!]
-    """A list of market IDs to filter by."""
-    marketIds: [String!]
-    """A list of market IDs to exclude from results."""
-    excludeMarketIds: [String!]
-    """A list of event IDs to filter by (returns records for markets in these events)."""
-    eventIds: [String!]
-    """A list of event IDs to exclude."""
-    excludeEventIds: [String!]
-    """A list of ranking attributes to apply."""
-    rankings: [PredictionTraderMarketRanking!]
-    """The maximum number of results to return."""
-    limit: Int
-    """Where in the list the server should start when returning items."""
-    offset: Int
-  ): PredictionTraderMarketFilterConnection
-  """Filters prediction traders using optional text, IDs, and ranking criteria."""
-  filterPredictionTraders(
-    """A set of filters to apply."""
-    filters: PredictionTraderFilters
-    """A phrase to search for. Can match trader alias, address, or venue ID."""
-    phrase: String
-    """A list of trader IDs to filter by."""
-    traderIds: [String!]
-    """A list of trader IDs to exclude from results."""
-    excludeTraderIds: [String!]
-    """A list of ranking attributes to apply."""
-    rankings: [PredictionTraderRanking!]
-    """The maximum number of results to return."""
-    limit: Int
-    """Where in the list the server should start when returning items."""
-    offset: Int
-  ): PredictionTraderFilterConnection
   """Returns community gathered notes."""
   getCommunityNotes(
     input: CommunityNotesInput

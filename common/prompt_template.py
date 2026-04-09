@@ -402,6 +402,180 @@ Output ONLY the pure question text, nothing else.
 Output: [Question only, no explanations, no thinking process, no tags]
 """
 
+synthetic_challenge_template_topic = """You are a question generator for GraphQL schema queries.
+
+Graphql Schema:
+{entity_schema}
+
+Topic: {topic}
+
+Task: Generate ONE natural question about the topic above, based on the provided GraphQL schema.
+
+{instruction}
+
+CRITICAL CONSTRAINT - MUST AVOID REPETITION:
+{recent_questions}
+
+QUESTION GENERATION WORKFLOW:
+
+Step 1: Understand the Topic
+  Action: Carefully read and understand the topic provided
+  Requirements:
+    - The question MUST be related to the topic
+    - Use the topic as the main focus of your question
+    - Stay within the scope of the topic
+
+Step 2: Analyze Schema
+  Action: Identify relevant entities and fields that relate to the topic
+  Output: List entities and fields that can help answer questions about the topic
+
+Step 3: Generate Question
+  Action: Create ONE natural question about the topic
+  Requirements:
+    - Question must be directly answerable using the schema
+    - Question must focus on the provided topic
+    - Keep question SHORT and STRAIGHTFORWARD
+    - Use business concepts that real users would understand
+  
+  ✅ MUST DO:
+  • Focus the question on the provided topic
+  • Ask about numerical values, metrics, or data related to the topic
+  • Keep questions SHORT and DIRECT
+  • Use natural, conversational language
+  • Verify the question is answerable from available schema fields
+  
+  ❌ MUST NOT DO:
+  • Do NOT deviate from the topic
+  • Do NOT use "and" or "or" to combine multiple questions
+  • Do NOT fabricate wallet addresses, entity IDs, or specific data values
+  • Do NOT ask questions similar to those in CRITICAL CONSTRAINT section
+  • Do NOT use vague phrases: "a specific X", "a particular Y", "for a given...", "for an entity..."
+  • Do NOT mention technical schema details (type names, field names from backend)
+  • Do NOT ask hypothetical questions: "What would happen if...", "How might...", "What could..."
+  • Do NOT include placeholders or unclear references: "my agreement", "my rewards"
+  • Do NOT ask questions requiring additional user input or context
+  • Do NOT include any explanations, thinking process, or extra text
+  • Do NOT add unnecessary modifiers or qualifiers
+  • Do NOT ignore the additional instructions provided above
+
+---
+
+OUTPUT FORMAT (CRITICAL):
+Output ONLY the pure question text, nothing else.
+- NO thinking process or reasoning
+- NO XML-style tags (<thinking>, <reasoning>, etc.)
+- NO prefixes ("Here's the question:", "The question is:", etc.)
+- If unable to generate a valid question, return empty string ""
+
+Output: [Question only, no explanations, no thinking process, no tags]
+"""
+
+synthetic_challenge_template_topic_subgraph = """You are a question generator for GraphQL schema queries.
+
+Graphql Schema:
+{entity_schema}
+
+Topic: {topic}
+
+Task: Generate ONE natural question about the topic above, based on the provided GraphQL schema.
+
+⚠️ CRITICAL LIMITATION - SUBGRAPH PROJECTS:
+This is a SUBGRAPH project which has STRICT LIMITATIONS:
+- Does NOT support aggregation operations (COUNT, SUM, AVG, TOTAL, etc.)
+- Can ONLY query individual entities or lists of entities
+- Can ONLY access direct field values, NOT computed aggregates
+
+{instruction}
+
+CRITICAL CONSTRAINT - MUST AVOID REPETITION:
+{recent_questions}
+
+QUESTION GENERATION WORKFLOW:
+
+Step 1: Understand the Topic
+  Action: Carefully read and understand the topic provided
+  Requirements:
+    - The question MUST be related to the topic
+    - Use the topic as the main focus of your question
+    - Stay within the scope of the topic
+    - ⚠️ Topic must be answerable WITHOUT aggregation operations
+
+Step 2: Analyze Schema
+  Action: Identify relevant entities and DIRECT FIELDS that relate to the topic
+  Output: List entities and their direct numerical fields (NOT counts or aggregates)
+  Note: Focus on fields like balance, amount, price, volume, NOT "number of X"
+
+Step 3: Generate Question
+  Action: Create ONE natural question about the topic
+  Requirements:
+    - Question must be directly answerable using the schema
+    - Question must focus on the provided topic
+    - Question must use ONLY direct field values (NO aggregations)
+    - Keep question SHORT and STRAIGHTFORWARD
+    - Use business concepts that real users would understand
+  
+  ✅ MUST DO (SUBGRAPH-SPECIFIC):
+  • Focus the question on the provided topic
+  • Ask about DIRECT field values related to the topic
+  • Ask superlative queries: "Which entity has the highest [field]?"
+  • Keep questions SHORT and DIRECT
+  • Use natural, conversational language
+  • Verify the field exists in the schema as a direct value
+  
+  ❌ MUST NOT DO (SUBGRAPH-SPECIFIC):
+  • Do NOT ask for aggregations: "What is the total...", "What is the sum...", "What is the average..."
+  • Do NOT ask "How many..." unless referring to a count field that exists in the entity
+  • Do NOT ask about "number of X" or "count of X" unless it's a direct field
+  • CRITICAL: Do NOT ask "highest number of", "most [count]", "largest number of" questions
+  • Examples of FORBIDDEN questions:
+    ✗ "Which account has the most domain registrations?" (requires counting)
+    ✗ "What is the total volume across all pools?" (requires sum aggregation)
+  • Do NOT deviate from the topic
+  • Do NOT fabricate wallet addresses, entity IDs, or specific data values
+  • Do NOT ask questions similar to those in CRITICAL CONSTRAINT section
+  • Do NOT use vague phrases: "a specific X", "a particular Y"
+  • Do NOT use indefinite articles implying unknown entities: "a token", "an account"
+  • Do NOT mention technical schema details (type names, field names from backend)
+  • Do NOT ask hypothetical questions: "What would happen if...", "How might..."
+  • Do NOT include placeholders or unclear references
+  • Do NOT include any explanations, thinking process, or extra text
+  • Do NOT ignore the additional instructions provided above
+
+  📝 Question Type Guidelines for SUBGRAPH (IMPORTANT - Vary Your Question Types):
+  
+  Randomly choose ONE of these question types:
+  
+  Type A: Superlative Query - Single Result (50% probability)
+    • Ask for the highest/lowest/largest/smallest of a DIRECT FIELD VALUE
+    • Examples: "Which token has the highest balance?", "What is the swap with the largest amount?"
+    • ⚠️ MUST use direct numeric fields (balance, amount, price, volume, etc.)
+    • ⚠️ NEVER ask about "highest number of X" or "most X" (that requires counting)
+    • Returns ONE entity as answer
+    • ⚠️ This queries all entities and sorts by a field to find the top one
+  
+  Type B: Superlative Query - Top N List (50% probability)
+    • Ask for top/bottom N items by a DIRECT FIELD VALUE (where N is typically 3-5)
+    • Examples: "What are the top 3 pools by liquidity?", "Which 5 swaps have the largest amounts?"
+    • ⚠️ MUST sort by a direct field that exists in the entity (NOT a count of related entities)
+    • ⚠️ NEVER ask "top 3 users with most transactions" (that requires counting transactions)
+    • Returns a short list as answer
+    • ⚠️ This queries entities sorted by a field, limited to N results
+  
+  ⚠️ CRITICAL: Focus on Type A and Type B. These are natural subgraph queries!
+  ⚠️ CRITICAL: Do NOT ask aggregation questions like "total", "average", "count of all"!
+  
+---
+
+OUTPUT FORMAT (CRITICAL):
+Output ONLY the pure question text, nothing else.
+- NO thinking process or reasoning
+- NO XML-style tags (<thinking>, <reasoning>, etc.)
+- NO prefixes ("Here's the question:", "The question is:", etc.)
+- If unable to generate a valid question, return empty string ""
+
+Output: [Question only, no explanations, no thinking process, no tags]
+"""
+
 
 
 score_template_v2 = """You are a STRICT factual accuracy evaluator for blockchain and numerical data.
@@ -895,3 +1069,19 @@ def fill_miner_self_tool_prompt(messages: list, block_height: int = 0, node_type
     
     # If not found, insert at the beginning
     messages.insert(0, SystemMessage(content=get_miner_self_tool_prompt(block_height, node_type)))
+
+
+def format_instruction_section(instruction: str = "") -> str:
+    """
+    Format the instruction parameter for prompt templates.
+    Only includes the 'Additional Instructions' section if instruction has a value.
+    
+    Args:
+        instruction: The instruction text to include
+        
+    Returns:
+        Formatted instruction section or empty string
+    """
+    if instruction and instruction.strip():
+        return f"\nAdditional Instructions (CRITICAL - Follow These):\n{instruction.strip()}\n"
+    return ""
