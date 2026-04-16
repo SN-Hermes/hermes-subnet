@@ -402,6 +402,114 @@ Output ONLY the pure question text, nothing else.
 Output: [Question only, no explanations, no thinking process, no tags]
 """
 
+
+synthetic_challenge_template_covalent_tools = """You are a question generator for Covalent API queries.
+
+Task: Generate ONE natural question about blockchain data that can be answered using Covalent RESTful APIs.
+
+CRITICAL CONSTRAINT - MUST AVOID REPETITION:
+{recent_questions}
+
+⚠️ IMPORTANT: Covalent uses RESTful API (NOT GraphQL)
+Most Covalent requests require:
+- chainName: The blockchain network (e.g., eth-mainnet, polygon-mainnet)
+- walletAddress or contractAddress: Specific addresses to query
+
+QUESTION GENERATION WORKFLOW (Follow steps in order):
+
+Step 1: Get Available Chains
+  Action: Use covalent_query tool to call the "Get all chains" endpoint
+  Endpoint: /v1/chains/
+  Purpose: Retrieve list of all supported blockchain networks
+  
+  Expected Response Format:
+  {{
+    "items": [
+      {{
+        "name": "eth-mainnet",  # Chain name to use in subsequent requests
+        "chain_id": 1,
+        ...
+      }}
+    ]
+  }}
+  
+  Output: Extract and store chain names from the response
+
+Step 2: Get Addresses (Wallets and Contracts)
+  Action: Use covalent_query tool to call the "Get logs" endpoint
+  Endpoint: /v1/{{chainName}}/events/
+  Requirements:
+    - Use ONE chain name from Step 1
+    - Retrieve recent event logs to extract addresses
+  
+  Expected Response Format:
+  {{
+    "items": [
+      {{
+        "sender_name": "USD Coin",  # Contract indicator (must have both)
+        "sender_contract_ticker_symbol": "USDC",  # Contract indicator (must have both)
+        "sender_address": "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48",
+        "supports_erc": ["erc20"],
+        ...
+      }}
+    ]
+  }}
+  
+  Output: Extract and categorize addresses:
+    - Contract Address: Has BOTH sender_name AND sender_contract_ticker_symbol (both must be present)
+    - Wallet Address: Missing either sender_name OR sender_contract_ticker_symbol (or both)
+
+Step 3: Generate Question Using Real Data
+  Action: Create ONE question using real chain names and addresses from Steps 1 & 2
+  Requirements:
+    - Use REAL chain names extracted from Step 1
+    - Use REAL addresses (wallet or contract) extracted from Step 2
+    - Select ONE endpoint from the available endpoints list below
+    - Question must require calling the selected endpoint to answer
+  
+  Available Endpoints:
+  
+  1. Get token balances for address
+     Path: /v1/{{chainName}}/address/{{walletAddress}}/balances_v2/
+     Purpose: Fetch native and ERC20 tokens held by an address with spot prices
+     Parameters:
+       - chainName: Chain name from Step 1
+       - walletAddress: Address from Step 2
+  
+  (More endpoints will be added here in the future)
+
+  Apply these constraints during generation:
+  
+  ✅ MUST DO:
+  • Use REAL chain names from Step 1 (never fabricate)
+  • Use REAL addresses from Step 2 (never fabricate)
+  • Ask about numerical values, balances, or metrics
+  • Keep questions SHORT and STRAIGHTFORWARD
+  • Use natural, business-friendly language
+  • Verify the question requires calling the selected endpoint
+  
+  ❌ MUST NOT DO:
+  • Do NOT fabricate chain names or addresses
+  • Do NOT use placeholder values like "a specific chain" or "a wallet"
+  • Do NOT use "and" or "or" to combine multiple questions
+  • Do NOT ask questions similar to those in CRITICAL CONSTRAINT section
+  • Do NOT mention technical API details (endpoint names, parameters)
+  • Do NOT ask hypothetical questions
+  • Do NOT include any explanations, thinking process, or extra text
+  • Do NOT add unnecessary modifiers or qualifiers
+
+---
+
+OUTPUT FORMAT (CRITICAL):
+Output ONLY the pure question text, nothing else.
+- NO thinking process or reasoning
+- NO XML-style tags (<thinking>, <reasoning>, etc.)
+- NO prefixes ("Here's the question:", "The question is:", etc.)
+- If unable to generate a valid question, return empty string ""
+
+Output: [Question only, no explanations, no thinking process, no tags]
+"""
+
 synthetic_challenge_template_topic = """You are a question generator for GraphQL schema queries.
 
 Graphql Schema:

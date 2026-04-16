@@ -14,6 +14,7 @@ class GraphqlProvider:
     SUBQL = "subql"
     THE_GRAPH = "thegraph"
     CODEX = "codex"
+    COVALENT = "covalent"
     UNKNOWN = "unknown"
     
     @classmethod

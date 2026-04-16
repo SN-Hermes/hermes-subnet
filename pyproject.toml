@@ -23,6 +23,7 @@ dependencies = [
     "starlette>=0.30.0",
     "pydantic>=2",
     "numpy>=2.1.0",
+    "jq>=1.11.0",
 ]
 
 [tool.uv.sources]

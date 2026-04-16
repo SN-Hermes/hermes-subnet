@@ -11,6 +11,7 @@ from langgraph.prebuilt import create_react_agent
 from langchain_openai import ChatOpenAI
 from loguru import logger
 
+from agent.base import BaseAgent
 from agent.stats import Phase, TokenUsageMetrics
 from agent.subquery_graphql_agent.base import create_graphql_toolkit
 from agent.subquery_graphql_agent.project import LocalProjectBase, RemoteChallenge
@@ -78,7 +79,8 @@ class QuestionGenerator:
             round_id: int = 0,
             weight_a: int = 70,
             weight_b: int = 30,
-            project_frequency: dict[str, int] = {}
+            project_frequency: dict[str, int] = {},
+            agent: BaseAgent = None
         ) -> tuple[str, str, dict | None, str | None, RemoteChallenge | None]:
         if not project.schema_content:
             return "", "unknown", None, "schema not found", None
@@ -123,6 +125,37 @@ class QuestionGenerator:
                 logger.error(f"Error occurred: {e}")
                 return "", None, f"{e}"
 
+        async def try_with_covalent():
+            try:
+
+                tools = agent.tools()
+                temp_executor = create_react_agent(
+                    model=llm,
+                    tools=tools[1:],
+                    prompt=None,
+                )
+                prompt = project.prompt_for_challenge_with_tools(recent_questions)
+                print('----prompt---\n')
+                print(prompt)
+                response = await temp_executor.ainvoke(
+                    { "messages": [{"role": "user", "content": prompt}] },
+                    config={
+                        "recursion_limit": 12,
+                    },
+                )
+                question = response.get('messages', [])[-1].content
+                d = None
+                if token_usage_metrics is not None:
+                    d = token_usage_metrics.parse(
+                        cid_hash, phase=Phase.GENERATE_QUESTION, response=response, extra={"round_id": round_id}
+                    )
+                    token_usage_metrics.append(d)
+                return question, d, None
+
+            except Exception as e:
+                logger.error(f"Error occurred: {e}")
+                return "", None, f"{e}"
+
         async def try_with_generic():
             try:
                 prompt = project.prompt_for_challenge(recent_questions)
@@ -141,6 +174,12 @@ class QuestionGenerator:
                 return "", None, f"{e}"
 
         async def try_with_remote():
+
+            # await project.test_covalent(
+            #     source=self.wallet.hotkey.ss58_address,
+            #     sign_func=self.wallet.hotkey.sign,
+            # )
+            # return
             freq = project_frequency.get(project.cid_hash, None)
             if freq is None or freq < 0:
                 return "", None, "Remote challenge skipped due to frequency setting", None
@@ -217,13 +256,15 @@ class QuestionGenerator:
         typ = "remote"
         question, metrics_data, error, challenge = await try_with_remote()
         if not question:
-            v = random.randint(0, 100)
-            if v <= weight_a:
-                question, metrics_data, error = await try_with_generic()
-                typ = "generic"
-            else:
-                question, metrics_data, error = await try_with_tools()
-                typ = "tools"
+            # v = random.randint(0, 100)
+            # if v <= weight_a:
+            #     question, metrics_data, error = await try_with_generic()
+            #     typ = "generic"
+            # else:
+            #     question, metrics_data, error = await try_with_tools()
+            #     typ = "tools"
+            question, metrics_data, error = await try_with_covalent()
+            typ = "covalent"
         
         if question:
             self.add_to_history(cid_hash, question)

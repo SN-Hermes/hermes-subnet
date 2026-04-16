@@ -23,6 +23,7 @@ from langchain_core.messages import (
 )
 
 from langgraph.graph import StateGraph, START, END
+from agent.base import BaseAgent
 from agent.stats import ToolCountHandler
 from agent.subquery_graphql_agent.base import GraphQLAgent
 from agent.subquery_graphql_agent.node_types import GraphqlProvider
@@ -35,6 +36,7 @@ import common.utils as utils
 class AgentManager:
     project_manager: ProjectManager
     graphql_agent: dict[str, GraphQLAgent]
+    agent: dict[str, BaseAgent]
     '''
     { 
         [cid]: {
@@ -53,6 +55,7 @@ class AgentManager:
     def __init__(self, save_project_dir: str, llm_synthetic: ChatOpenAI, ipc_common_config: dict = None):
         self.save_project_dir = save_project_dir
         self.graphql_agent = {}
+        self.agent = {}
         self.miner_agent = {}
         self.llm_synthetic = llm_synthetic
         self.project_manager = ProjectManager(self.llm_synthetic, self.save_project_dir)
@@ -91,7 +94,8 @@ class AgentManager:
 
             if enabled and cid_hash not in self.graphql_agent:
                 new_agents.append(cid_hash)
-                self.graphql_agent[cid_hash] = GraphQLAgent(p.to_project_config())
+                # self.graphql_agent[cid_hash] = GraphQLAgent(p.to_project_config())
+                self.agent[cid_hash] = p.create_agent()
         
         if new_agents:
             logger.info(f"[AgentManager] Created graphql_agents for projects: {new_agents}")
@@ -299,8 +303,9 @@ class AgentManager:
     def get_local_projects(self):
         return self.project_manager.get_local_projects()
 
-    def get_graphql_agent(self, cid_hash: str) -> GraphQLAgent | None:
-        return self.graphql_agent.get(cid_hash, None)
+    def get_graphql_agent(self, cid_hash: str) -> BaseAgent | None:
+        # return self.graphql_agent.get(cid_hash, None)
+        return self.agent.get(cid_hash, None)
 
     def is_project_enabled(self, cid_hash: str) -> bool:
         return self.project_manager.is_project_enabled(cid_hash)

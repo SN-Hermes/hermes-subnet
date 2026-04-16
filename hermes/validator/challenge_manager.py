@@ -303,7 +303,7 @@ class ChallengeManager:
                         if latest_block is not None:
                             block_cache[cid_hash] = latest_block - 1000
 
-                        if p.node_type == GraphqlProvider.CODEX:
+                        if p.node_type == GraphqlProvider.CODEX or p.node_type == GraphqlProvider.COVALENT:
                             weight_a = 100
                             weight_b = 0
 
@@ -316,7 +316,8 @@ class ChallengeManager:
                             round_id=self.round_id,
                             weight_a=weight_a,      # normal
                             weight_b=weight_b,      # tool
-                            project_frequency=project_frequency
+                            project_frequency=project_frequency,
+                            agent=self.agent_manager.get_graphql_agent(cid_hash)
                         )
 
                         if not question:
@@ -587,10 +588,9 @@ class ChallengeManager:
                 raise ValueError(f"No server agent found for cid: {cid_hash}")
 
             model_name = agent.llm.model_name
-            response, _, _ = await agent.query_no_stream(
+            response = await agent.query(
                 question,
                 prompt_cache_key=f"{cid_hash}_{start_time}",
-                is_synthetic=True,
                 block_height=block_height
             )
 

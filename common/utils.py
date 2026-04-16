@@ -739,6 +739,8 @@ async def get_latest_block(endpoint: str, node_type: str) -> int | None:
                 logger.info("Added THEGRAPH_API_TOKEN to Authorization header to get latest block")
         elif node_type == "codex":
             return 1000
+        elif node_type == "covalent":
+            return 1000
         else:
             logger.error(f"Unknown node_type: {node_type}")
             return None
