@@ -11,6 +11,7 @@ from langgraph.prebuilt import create_react_agent
 from langchain_openai import ChatOpenAI
 from loguru import logger
 
+from agent.base import BaseAgent
 from agent.stats import Phase, TokenUsageMetrics
 from agent.subquery_graphql_agent.base import create_graphql_toolkit
 from agent.subquery_graphql_agent.project import LocalProjectBase, RemoteChallenge
@@ -78,7 +79,8 @@ class QuestionGenerator:
             round_id: int = 0,
             weight_a: int = 70,
             weight_b: int = 30,
-            project_frequency: dict[str, int] = {}
+            project_frequency: dict[str, int] = {},
+            agent: BaseAgent = None
         ) -> tuple[str, str, dict | None, str | None, RemoteChallenge | None]:
         if not project.schema_content:
             return "", "unknown", None, "schema not found", None
@@ -104,6 +106,37 @@ class QuestionGenerator:
                     tools=tools,
                     prompt=None,
                 )
+                response = await temp_executor.ainvoke(
+                    { "messages": [{"role": "user", "content": prompt}] },
+                    config={
+                        "recursion_limit": 12,
+                    },
+                )
+                question = response.get('messages', [])[-1].content
+                d = None
+                if token_usage_metrics is not None:
+                    d = token_usage_metrics.parse(
+                        cid_hash, phase=Phase.GENERATE_QUESTION, response=response, extra={"round_id": round_id}
+                    )
+                    token_usage_metrics.append(d)
+                return question, d, None
+
+            except Exception as e:
+                logger.error(f"Error occurred: {e}")
+                return "", None, f"{e}"
+
+        async def try_with_covalent():
+            try:
+
+                tools = agent.tools()
+                temp_executor = create_react_agent(
+                    model=llm,
+                    tools=tools[1:],
+                    prompt=None,
+                )
+                prompt = project.prompt_for_challenge_with_tools(recent_questions)
+                print('----prompt---\n')
+                print(prompt)
                 response = await temp_executor.ainvoke(
                     { "messages": [{"role": "user", "content": prompt}] },
                     config={
@@ -153,6 +186,7 @@ class QuestionGenerator:
                 source=self.wallet.hotkey.ss58_address,
                 sign_func=self.wallet.hotkey.sign,
             )
+            logger.info(f'-----chs-------{chs}')
             if not chs:
                 return "", None, "No available remote challenges", None
             

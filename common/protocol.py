@@ -78,6 +78,9 @@ class CompletionMessagesMixin:
 
 class SyntheticNonStreamSynapse(BaseSynapse):
     question: str | None = None
+    ground_truth: str | None = None
+    solution: str | None = None
+    score: str | None = None
 
     def get_question(self):
         return self.question

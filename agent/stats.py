@@ -143,7 +143,7 @@ class TokenUsageMetrics:
             self,
             data: dict[str, any]
         ) -> dict[str, any]:
-        if data is None:
+        if not data:
             return None
         
         self.datas.append(data)

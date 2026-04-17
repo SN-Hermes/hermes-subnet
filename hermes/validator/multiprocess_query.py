@@ -30,6 +30,8 @@ async def query_single_miner(
     cid_hash: str,
     challenge_id: str,
     question: str,
+    ground_truth: str,
+    solution: str,
     block_height: int,
     timeout: int,
     process_id: int,
@@ -43,6 +45,8 @@ async def query_single_miner(
         uid=uid,
         cid_hash=cid_hash,
         question=question,
+        ground_truth=ground_truth,
+        solution=solution,
         block_height=block_height
     )
     query_start_time = time.perf_counter()
@@ -103,6 +107,8 @@ async def query_miner_batch(
     cid_hash: str,
     challenge_id: str,
     question: str,
+    ground_truth: str,
+    solution: str,
     block_height: int,
     timeout: int,
 ) -> List[SyntheticNonStreamSynapse]:
@@ -131,6 +137,8 @@ async def query_miner_batch(
                 cid_hash=cid_hash,
                 challenge_id=challenge_id,
                 question=question,
+                ground_truth=ground_truth,
+                solution=solution,
                 block_height=block_height,
                 timeout=timeout,
                 process_id=process_id,
@@ -151,6 +159,8 @@ def run_query_process_batch(
     cid_hash: str,
     challenge_id: str,
     question: str,
+    ground_truth: str,
+    solution: str,
     block_height: int,
     timeout: int,
 ) -> List[SyntheticNonStreamSynapse]:
@@ -173,6 +183,8 @@ def run_query_process_batch(
                 cid_hash,
                 challenge_id,
                 question,
+                ground_truth,
+                solution,
                 block_height,
                 timeout,
             )
@@ -222,6 +234,8 @@ async def query_miners_multiprocess(
     cid_hash: str,
     challenge_id: str,
     question: str,
+    ground_truth: str,
+    solution: str,
     block_height: int,
     timeout: int,
     settings: Settings,
@@ -291,6 +305,8 @@ async def query_miners_multiprocess(
                 cid_hash,
                 challenge_id,
                 question,
+                ground_truth,
+                solution,
                 block_height,
                 timeout,
             )

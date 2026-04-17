@@ -540,6 +540,7 @@ def safe_float_convert(s: str) -> float:
     try:
         return float(s)
     except Exception as e:
+        logger.error(f"Failed to convert '{s}' to float: {e}")
         return 0.0
 
 def is_array(obj) -> bool:
@@ -738,6 +739,8 @@ async def get_latest_block(endpoint: str, node_type: str) -> int | None:
                 headers["Authorization"] = f"Bearer {thegraph_token}"
                 logger.info("Added THEGRAPH_API_TOKEN to Authorization header to get latest block")
         elif node_type == "codex":
+            return 1000
+        elif node_type == "covalent":
             return 1000
         else:
             logger.error(f"Unknown node_type: {node_type}")

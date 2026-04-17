@@ -13,6 +13,7 @@ from loguru import logger
 from multiprocessing.synchronize import Event
 import numpy as np
 import torch
+from langchain_core.messages import HumanMessage, SystemMessage
 
 from agent.subquery_graphql_agent.node_types import GraphqlProvider
 from hermes.validator.benchmark import BenchMark
@@ -217,6 +218,7 @@ class ChallengeManager:
 
             block_cache: dict[str, int] = {}
             miners_counter: dict[int, tuple[int, int]] = {}  # uid -> [success_count, total_count]
+            progressive_solution: dict[str, tuple[str, float]] = {}  # cid_hash -> (solution,score)
             challenge_interval = self.challenge_interval
 
             while not self.event_stop.is_set():
@@ -303,7 +305,7 @@ class ChallengeManager:
                         if latest_block is not None:
                             block_cache[cid_hash] = latest_block - 1000
 
-                        if p.node_type == GraphqlProvider.CODEX:
+                        if p.node_type == GraphqlProvider.CODEX or p.node_type == GraphqlProvider.COVALENT:
                             weight_a = 100
                             weight_b = 0
 
@@ -316,26 +318,43 @@ class ChallengeManager:
                             round_id=self.round_id,
                             weight_a=weight_a,      # normal
                             weight_b=weight_b,      # tool
-                            project_frequency=project_frequency
+                            project_frequency=project_frequency,
+                            agent=self.agent_manager.get_agent(cid_hash)
                         )
+                        # question = "how many indexers are there? and how many SQT supply? and how many delegations?"
+                        # typ = "generic"
+                        # q_metrics_data = None
+                        # challenge = None
 
                         if not question:
                             logger.warning(f"[ChallengeManager] - {cid_hash} Failed to generate question (attempt {attempt + 1}/{max_retries})")
                             error_msgs.append(f"(round: {self.round_id}, attempt: {attempt + 1}/{max_retries}, {cid_hash}) {error}")
                             continue
 
+                        if not challenge:
+                            logger.warning(f"[ChallengeManager] - {cid_hash} Failed to pull challenge (attempt {attempt + 1}/{max_retries})")
+                            error_msgs.append(f"(round: {self.round_id}, attempt: {attempt + 1}/{max_retries}, {cid_hash}) {error}")
+                            continue
+                        
                         overwrite_block_height = challenge.block_height if challenge and challenge.block_height else None
 
                         overwrite_msg = f", overwrite block {overwrite_block_height}" if overwrite_block_height else ""
                         logger.info(f"[ChallengeManager] - {cid_hash} strategy: {typ}, Selected block height: {block_cache[cid_hash]}{overwrite_msg}")
 
-                        success, ground_truth, ground_cost, metrics_data, model_name = await self.generate_ground_truth(
-                            cid_hash=cid_hash,
-                            question=question,
-                            token_usage_metrics=self.token_usage_metrics,
-                            round_id=self.round_id,
-                            block_height=overwrite_block_height or block_cache[cid_hash]
-                        )
+                        success = True
+                        ground_truth = challenge.ground_truth
+                        ground_cost = 0
+                        metrics_data = {}
+                        model_name = "unknown"
+
+                        if not ground_truth:
+                            success, ground_truth, ground_cost, metrics_data, model_name = await self.generate_ground_truth(
+                                cid_hash=cid_hash,
+                                question=question,
+                                token_usage_metrics=self.token_usage_metrics,
+                                round_id=self.round_id,
+                                block_height=overwrite_block_height or block_cache[cid_hash]
+                            )
 
                         is_valid = success and utils.is_ground_truth_valid(ground_truth)
 
@@ -387,6 +406,7 @@ class ChallengeManager:
 
                     # query all miner
                     logger.info(f"[ChallengeManager] - {challenge_id} query miners: {uids}")
+                    ground_solution = progressive_solution.get(cid_hash, (None, None))[0] or challenge.solution
 
                     responses = await query_miners_multiprocess(
                         uids=uids,
@@ -397,7 +417,9 @@ class ChallengeManager:
                         cid_hash=cid_hash,
                         challenge_id=challenge_id,
                         question=question,
-                        block_height=block_cache[cid_hash],
+                        ground_truth=challenge.ground_truth,
+                        solution=ground_solution,
+                        block_height=overwrite_block_height or block_cache[cid_hash],
                         timeout=self.forward_miner_timeout,
                         settings=self.settings,
                     )
@@ -405,58 +427,211 @@ class ChallengeManager:
                     logger.info(f"[ChallengeManager] - {challenge_id} query miners done")
                     self.token_usage_metrics.append(metrics_data)
 
-                    # score result
-                    (
-                        zip_scores,
-                        ground_truth_scores,
-                        elapse_weights,
-                        miners_elapse_time,
-                        ground_truth_scores_error,
-                        ground_truth_scores_raw
-                    ) = await self.scorer_manager.compute_challenge_score(
-                        ground_truth,
-                        ground_cost,
-                        responses,
-                        challenge_id=challenge_id,
-                        cid_hash=cid_hash,
-                        token_usage_metrics=self.token_usage_metrics,
-                        min_latency_improvement_ratio=self.ipc_meta_config.get("min_latency_improvement_ratio", 0.2),
-                        round_id=self.round_id,
-                        node_type=p.node_type
-                    )
+                    logger.info(f"------responses----{responses}")
 
+                    # check response solution
+                    # Step 1: Score all miners first to get initial scores
+                    # (
+                    #     zip_scores,
+                    #     ground_truth_scores,
+                    #     elapse_weights,
+                    #     miners_elapse_time,
+                    #     ground_truth_scores_error,
+                    #     ground_truth_scores_raw
+                    # ) = await self.scorer_manager.compute_challenge_score(
+                    #     ground_truth,
+                    #     ground_cost,
+                    #     responses,
+                    #     challenge_id=challenge_id,
+                    #     cid_hash=cid_hash,
+                    #     token_usage_metrics=self.token_usage_metrics,
+                    #     min_latency_improvement_ratio=self.ipc_meta_config.get("min_latency_improvement_ratio", 0.2),
+                    #     round_id=self.round_id,
+                    #     node_type=p.node_type
+                    # )
+
+                    # Step 2: Filter miners with score >= 5
+                    uids_score = [0.0] * len(uids)
+
+                    high_score_miners = [
+                        (uid, resp)
+                        for uid, resp in zip(uids, responses)
+                        if float(resp.score) >= 5 and resp.solution
+                    ]
+                    uids_info: dict[int, dict] = {}
+
+                    logger.info(f"[ChallengeManager] - {challenge_id} Initial scoring done, found {len(high_score_miners)} miners with score >= 5")
+
+                    if high_score_miners:
+                        logger.info(f"[ChallengeManager] - {challenge_id} Found {len(high_score_miners)} miners with score >= 5, checking solution similarity")
+                        
+                        # Step 3: Calculate similarity scores for high-scoring miners
+                        similarity_tasks = []
+                        for uid, resp in high_score_miners:
+                            similarity_tasks.append(
+                                self.scorer_manager.cal_solution_similarity_score(
+                                    ground_solution=ground_solution,
+                                    miner_solution=resp.solution
+                                )
+                            )
+                        
+                        similarity_results: tuple[str, str] = await asyncio.gather(*similarity_tasks)
+                        
+                        low_similarity_miners = []   # < 5: independent solution, need verification
+
+                        for (uid, resp), (similarity_score_raw, similarity_error) in zip(high_score_miners, similarity_results):
+                            similarity_score = None
+                            if not similarity_error:
+                                try:
+                                    similarity_score = 3 or float(str(similarity_score_raw).strip())
+                                    logger.info(f"[ChallengeManager] - {challenge_id} UID {uid}, similarity_score_raw={similarity_score_raw}")
+                                
+                                    if similarity_score > 5:
+                                        logger.warning(f"[ChallengeManager] - {challenge_id} UID {uid} flagged: high similarity ({similarity_score_raw}) with reference solution, possible copying")
+                                    else:
+                                        low_similarity_miners.append((uid, resp))
+                                        logger.info(f"[ChallengeManager] - {challenge_id} UID {uid} has low similarity ({similarity_score_raw})")
+                                except (ValueError, AttributeError) as e:
+                                    similarity_error = f"Failed to parse similarity score: {similarity_score_raw}, error: {e}"
+                                    logger.warning(f"[ChallengeManager] - {challenge_id} UID {uid}: {similarity_error}")
+                            
+                            uids_info[uid] = {
+                                "similarity_score": similarity_score,
+                                "similarity_error": similarity_error
+                            }
+
+                        # Step 4: Verify low similarity miners - ensure their answer matches their solution
+                        if low_similarity_miners:
+                            logger.info(f"[ChallengeManager] - {challenge_id} Verifying {len(low_similarity_miners)} low-similarity miners")
+                            
+                            replay_solution_tasks = []
+                            for uid, resp in low_similarity_miners:
+                                # Execute miner's solution with validator's agent to get the expected result
+                                replay_solution_tasks.append(
+                                    self._execute_solution_with_agent(
+                                        cid_hash=cid_hash,
+                                        question=question,
+                                        solution=resp.solution,
+                                        uid=uid
+                                    )
+                                )
+                            
+                            replay_solution_results = await asyncio.gather(*replay_solution_tasks)
+                            
+                            # Step 5: Score miner's answer against the result from their own solution (parallel)
+                            # Build tasks list with dummy tasks for failed verifications to maintain index alignment
+                            match_score_tasks = []
+                            for (uid, resp), (replay_result, replay_error) in zip(low_similarity_miners, replay_solution_results):
+                                if replay_result:
+                                    # Compare miner's answer with the result from executing their solution
+                                    match_score_tasks.append(
+                                        self.scorer_manager._cal_ground_truth_score(
+                                            ground_truth=resp.response, 
+                                            answer=replay_result,
+                                        )
+                                    )
+                                else:
+                                    # Add dummy task that returns None to maintain index alignment
+                                    async def dummy_task():
+                                        return None, replay_error
+                                    match_score_tasks.append(dummy_task())
+                            
+                            match_score_results = await asyncio.gather(*match_score_tasks)
+                            
+                            # Process match scores and update miner scores
+                            for (uid, resp), (replay_result, replay_error), (match_score_raw, match_error) in zip(
+                                low_similarity_miners, replay_solution_results, match_score_results
+                            ):
+                                match_score = None
+                                if replay_result is not None and match_score_raw:
+                                    try:
+                                        match_score = float(str(match_score_raw).strip())
+                                        # If match score is low, the miner's answer doesn't match their solution (suspicious)
+                                        if match_score < 5:
+                                            logger.warning(
+                                                f"[ChallengeManager] - {challenge_id} UID {uid}: "
+                                                f"Answer-solution mismatch detected (match_score={match_score:.1f}), "
+                                                f"answer may not come from provided solution"
+                                            )
+                                            # Penalize: use the lower match score
+                                        else:
+                                            logger.info(f"[ChallengeManager] - {challenge_id} UID {uid}: Answer-solution match score {match_score:.1f}")
+                                            miner_idx = uids.index(uid)
+                                            uids_score[miner_idx] = min(match_score, 10.0)
+
+                                            # ground_truth_scores[miner_idx] = min(match_value, 10.0)
+                                            # zip_scores[miner_idx] = utils.fix_float(ground_truth_scores[miner_idx] * elapse_weights[miner_idx])
+                                        
+                                    except (ValueError, AttributeError) as e:
+                                        match_error = f"Failed to parse match score: {match_score_raw}, error: {e}"
+                                        logger.error(f"[ChallengeManager] - {challenge_id} UID {uid}: Failed to parse match score: {match_score_raw}, error: {e}")
+
+                                uids_info[uid].update({
+                                    "replay_result": replay_result,
+                                    "replay_error": replay_error,
+                                    "match_score": match_score,
+                                    "match_error": match_error,
+                                })
+                    
+                    # Continue with normal flow
                     if project_phase != ProjectPhase.WARMUP.value:
                         # Apply multi-coldkey penalty
                         for idx, (uid, coldkey) in enumerate(zip(uids, coldkeys)):
                             if coldkey and coldkey in seen_coldkeys:
                                 first_uid = seen_coldkeys[coldkey]
                                 if uid != first_uid:
-                                    zip_scores[idx] *= multi_coldkey_penalty
+                                    uids_score[idx] *= multi_coldkey_penalty
                                     logger.warning(f"[ChallengeManager] Applied multi-coldkey penalty to UID {uid} (coldkey: {coldkey}, first_uid: {first_uid}, penalty: {multi_coldkey_penalty})")
 
-                        project_score_matrix.append(zip_scores)
+                        project_score_matrix.append(uids_score)
                         
                         # update miners counter
-                        for uid, truth_score in zip(uids, ground_truth_scores):
+                        for uid, truth_score in zip(uids, uids_score):
                             success_count, total_count = miners_counter.get(uid, (0, 0))
                             if truth_score >= organic_success_score_threshold:
                                 success_count += 1
                             total_count += 1
                             miners_counter[uid] = (success_count, total_count)
 
-                    table_formatter.create_synthetic_miners_response_table(
-                        round_id=self.round_id,
-                        challenge_id=challenge_id,
-                        uids=uids,
-                        hotkeys=hotkeys,
-                        responses=responses,
-                        ground_truth_scores=ground_truth_scores,
-                        ground_truth_scores_error=ground_truth_scores_error,
-                        elapse_weights=elapse_weights,
-                        zip_scores=zip_scores,
-                        cid=cid_hash,
-                        max_table_rows=int(os.getenv("MAX_TABLE_ROWS", 50))
-                    )
+                    # table_formatter.create_synthetic_miners_response_table(
+                    #     round_id=self.round_id,
+                    #     challenge_id=challenge_id,
+                    #     uids=uids,
+                    #     hotkeys=hotkeys,
+                    #     responses=responses,
+                    #     ground_truth_scores=uids_score,
+                    #     ground_truth_scores_error=ground_truth_scores_error,
+                    #     elapse_weights=elapse_weights,
+                    #     zip_scores=zip_scores,
+                    #     cid=cid_hash,
+                    #     max_table_rows=int(os.getenv("MAX_TABLE_ROWS", 50))
+                    # )
+
+                    # Find the highest scoring miner and their solution
+                    best_solution = None
+                    best_uid = None
+                    uid_score_pairs = list(zip(uids, uids_score))
+                    # Find max score
+                    max_score = max(uids_score)
+                    # Only set best_uid and best_solution if max_score > 5
+                    if max_score > 5:
+                        # Get all uids with max score, sorted by uid (ascending)
+                        best_uids = sorted([uid for uid, score in uid_score_pairs if score == max_score])
+                        if best_uids:
+                            best_uid = best_uids[0]  # Take the smallest uid if there are ties
+                            # Find the response for this uid
+                            best_response = next((resp for uid, resp in zip(uids, responses) if uid == best_uid), None)
+                            if best_response and best_response.solution:
+                                best_solution = best_response.solution
+                                logger.info(f"[ChallengeManager] - {challenge_id} Best performing miner: UID {best_uid} with score {max_score:.1f}")
+                            else:
+                                logger.warning(f"[ChallengeManager] - {challenge_id} Best miner UID {best_uid} has no solution available")
+                    else:
+                        logger.info(f"[ChallengeManager] - {challenge_id} Max score {max_score:.1f} <= 5, no best miner selected")
+                    
+                    if best_solution and progressive_solution.get(cid_hash, (None, 0))[1] <= max_score:
+                        logger.info(f"[ChallengeManager] - {challenge_id} Updating progressive solution to UID {best_uid} with score {max_score:.1f}")
+                        progressive_solution[cid_hash] = (best_solution, max_score)
 
                     await self.benchmark.upload(
                         uid=self.V.uid,
@@ -484,16 +659,27 @@ class ChallengeManager:
                         ground_output_tokens=metrics_data.get("output_tokens", 0),
                         block_height=str(block_cache[cid_hash]),
 
+                        best_miner_uid=best_uid,
+
                         miners_answer=[
                             {
                                 "uid": uid,
                                 "address": hotkey,
                                 "minerModelName": resp.miner_model_name[:50] if resp.miner_model_name else "",
                                 "graphqlAgentModelName": resp.graphql_agent_model_name[:50] if resp.graphql_agent_model_name else "",
-                                "elapsed": elapse_time,
-                                "truthScore": truth_score,
-                                "truthScoreError": score_error[:255] if score_error else "",
-                                "truthScoreRaw": score_raw,
+                                "elapsed": resp.elapsed_time,
+
+                                "introspectionScore": resp.score,
+                                "similarity_score": uids_info.get(uid, {}).get("similarity_score"),
+                                "similarity_error": uids_info.get(uid, {}).get("similarity_error"),
+                                "replay_result": uids_info.get(uid, {}).get("replay_result"),
+                                "replay_error": uids_info.get(uid, {}).get("replay_error"),
+                                "match_score": uids_info.get(uid, {}).get("match_score"),
+                                "match_error": uids_info.get(uid, {}).get("match_error"),
+
+                                "truthScore": uids_score[uids.index(uid)],
+                                "truthScoreError": None,
+                                "truthScoreRaw": None,
                                 "statusCode": resp.status_code,
                                 "error": resp.error,
                                 "answer": resp.response if resp.response else "",
@@ -516,8 +702,8 @@ class ChallengeManager:
                                 "graphqlAgentInnerToolCalls": [],
                                 "graphqlAgentInnerToolCallsRaw": resp.graphql_agent_inner_tool_calls if resp.graphql_agent_inner_tool_calls else [],
                             }
-                            for uid, hotkey, elapse_time, truth_score, score_error, score_raw, resp in zip(
-                                uids, hotkeys, miners_elapse_time, ground_truth_scores, ground_truth_scores_error, ground_truth_scores_raw, responses
+                            for uid, hotkey, resp in zip(
+                                uids, hotkeys, responses
                             )
                             if resp.status_code != ErrorCode.NOT_HEALTHY.value
                         ],
@@ -582,15 +768,14 @@ class ChallengeManager:
         metrics_data = None
         model_name = ""
         try:
-            agent = self.agent_manager.get_graphql_agent(cid_hash)
+            agent = self.agent_manager.get_agent(cid_hash)
             if not agent:
                 raise ValueError(f"No server agent found for cid: {cid_hash}")
 
             model_name = agent.llm.model_name
-            response, _, _ = await agent.query_no_stream(
+            response = await agent.query(
                 question,
                 prompt_cache_key=f"{cid_hash}_{start_time}",
-                is_synthetic=True,
                 block_height=block_height
             )
 
@@ -625,6 +810,54 @@ class ChallengeManager:
 
         finally:
             return [success, result, utils.fix_float(time.perf_counter() - start_time), metrics_data, model_name]
+
+    async def _execute_solution_with_agent(
+            self,
+            cid_hash: str,
+            question: str,
+            solution: str,
+            uid: int = None
+        ) -> Tuple[str | None, str | None]:
+        """
+        Execute a miner's solution using the validator's agent to verify the result.
+        
+        Args:
+            cid_hash: The project CID hash
+            solution: The solution prompt/instructions from the miner
+            block_height: The block height to use for queries
+            uid: The miner's UID (for logging)
+            
+        Returns:
+            The result string from executing the solution, or None if failed
+        """
+        try:
+            agent = self.agent_manager.get_agent(cid_hash)
+            if not agent:
+                logger.warning(f"[ChallengeManager] No agent found for cid: {cid_hash}, UID: {uid}")
+                return None, "No agent found to execute solution"
+
+            # Execute the solution using the validator's agent
+            # response = await agent.query(
+            #     solution,
+            #     prompt_cache_key=f"{cid_hash}_revalidation_{uid}_{time.perf_counter()}",
+            # )
+            messages = [
+                SystemMessage(content=solution),
+                HumanMessage(content=question)
+            ]
+            response = await agent.ainvoke({"messages": messages})
+            result = response.get('messages', [])[-1].content
+            
+            if not result:
+                error = utils.try_get_invalid_tool_messages(response.get('messages', []))
+                logger.warning(f"[ChallengeManager] Failed to execute solution for UID {uid}: {error}")
+                return None, error or "Failed to execute solution, no result returned"
+
+            return result, None
+
+        except Exception as e:
+            logger.error(f"[ChallengeManager] Error executing solution for UID {uid}, cid: {cid_hash}: {e}\n{traceback.format_exc()}")
+            return None, f"Error executing solution. {e}"
 
     async def query_miner(
         self,

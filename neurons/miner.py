@@ -38,6 +38,7 @@ from common.sqlite_manager import SQLiteManager
 import common.utils as utils
 from common.settings import settings
 from hermes.base import BaseNeuron
+from hermes.validator.scorer_manager import ScorerManager
 
 ROLE = "miner"
 
@@ -66,6 +67,27 @@ class Miner(BaseNeuron):
     async def start(self):
         try:
             super().start(flag=RoleFlag.MINER)
+
+            score_model_name = os.getenv("LLM_MODEL") or os.getenv("SCORE_LLM_MODEL", "google/gemini-3-flash-preview")
+            score_model_base_url = os.getenv("SCORE_LLM_MODEL_BASE_URL", None)
+            score_model_api_key = os.getenv("SCORE_LLM_MODEL_API_KEY", None)
+            score_model_args = {}
+            if score_model_base_url:
+                score_model_args["base_url"] = score_model_base_url
+            if score_model_api_key:
+                score_model_args["api_key"] = score_model_api_key
+
+            score_timeout = int(os.getenv("SCORE_TIMEOUT", 60))
+            self.llm_score = ChatOpenAI(
+                model=score_model_name,
+                temperature=0,
+                timeout=score_timeout,
+                max_retries=3,
+                **score_model_args
+            )
+            self.scorer_manager = ScorerManager(
+                llm_score=self.llm_score,
+            )
 
             self.project_usage_metrics = ProjectUsageMetrics()
             self.token_usage_metrics = TokenUsageMetrics()
@@ -218,6 +240,21 @@ class Miner(BaseNeuron):
             logger.error(f"[Miner] DB writer error: {e}")
             raise
 
+    def _read_solution_prompt(self, cid_hash: str) -> str | None:
+        """Read solution prompt from projects/miner/{cid_hash}/solution/001.MD"""
+        try:
+            solution_file = self.agent_manager.save_project_dir / cid_hash / "solution" / "001.MD"
+            if solution_file.exists():
+                with open(solution_file, 'r', encoding='utf-8') as f:
+                    content = f.read().strip()
+                    if content:
+                        logger.debug(f"[Miner] Loaded solution prompt for {cid_hash} ({len(content)} chars)")
+                        return content
+            return None
+        except Exception as e:
+            logger.warning(f"[Miner] Failed to read solution prompt for {cid_hash}: {e}")
+            return None
+
     async def _handle_task(
             self,
             task: SyntheticNonStreamSynapse | OrganicNonStreamSynapse,
@@ -226,20 +263,42 @@ class Miner(BaseNeuron):
         question = task.get_question()
 
         cid_hash = task.cid_hash
-        graph, graphql_agent = self.agent_manager.get_miner_agent(cid_hash)
+        agent = self.agent_manager.get_agent(cid_hash)
 
         enable_fallback = os.getenv("ENABLE_FALL_BACK_GRAPHQL_AGENT", "false").lower() == "true"
+        
+        # Read solution prompt if exists
+        solution_prompt = self._read_solution_prompt(cid_hash)
+        solution_prompt += f" # block height is {task.block_height}"
+        
+        print('---------solution prompt---------\n')
+        print(solution_prompt)
+        print('---------\n')
+
+        # simi, err = await self.scorer_manager.cal_solution_similarity_score(
+        #     task.solution,
+        #     solution_prompt
+        # )
+        # if err:
+        #     log.error(f"[Miner] Similarity evaluation error for task {task.id}: {err}")
+        #     return
+        # logger.info(f"[Miner] Solution similarity for task {task.id}: {simi}")
+
+
         if isinstance(task, SyntheticNonStreamSynapse):
             tag = "Synthetic"
             type = 0
             is_synthetic = True
             phase = Phase.MINER_SYNTHETIC
+            
+            # Build system prompt
+            # base_system_prompt = get_miner_self_tool_prompt(
+            #     block_height=task.block_height, 
+            #     node_type=agent.project.node_type if agent else "unknown",
+            #     enable_fallback=enable_fallback
+            # )
             messages = [
-                SystemMessage(content=get_miner_self_tool_prompt(
-                    block_height=task.block_height, 
-                    node_type=graphql_agent.config.node_type if graphql_agent else "unknown",
-                    enable_fallback=enable_fallback)
-                ),
+                SystemMessage(content=solution_prompt),
                 HumanMessage(content=question)
             ]
 
@@ -248,8 +307,12 @@ class Miner(BaseNeuron):
             type = 1
             is_synthetic = False
             phase = Phase.MINER_ORGANIC_NONSTREAM
-            messages = [SystemMessage(content=get_miner_self_tool_prompt(block_height=task.block_height, node_type=graphql_agent.config.node_type if graphql_agent else "unknown"))] + task.to_messages()
-
+            messages = [
+                SystemMessage(content=get_miner_self_tool_prompt(
+                    block_height=task.block_height, 
+                    node_type=agent.project.node_type if agent else "unknown"
+                ))
+            ] + task.to_messages()
         else:
             raise ValueError("Unsupported task type")
 
@@ -257,33 +320,42 @@ class Miner(BaseNeuron):
         usage_info = {}
         tool_hit = []
         graphql_agent_inner_tool_calls = []
-        response = None
         error = None
         status_code = ErrorCode.SUCCESS
 
         before = time.perf_counter()
 
         try:
-            if not graph:
+            if not agent:
                 log.warning(f"[{tag}] - {task.id} No agent found for project {cid_hash}")
                 error = f"No agent found for project {cid_hash}"
                 status_code = ErrorCode.AGENT_NOT_FOUND
             else:
-                r = await graph.ainvoke({"messages": messages, "block_height": task.block_height})
+                r = await agent.ainvoke({"messages": messages, "block_height": task.block_height})
+                print(r)
                 (
                     answer,
                     usage_info,
                     tool_hit,
                     graphql_agent_inner_tool_calls,
-                    response,
                     error,
                     status_code
                 ) = self.get_answer(phase, task, r)
-
         except Exception as e:
             log.error(f"handle task error {task.id} - {question}. {e}\n")
             error = str(e)
             status_code = ErrorCode.INTERNAL_SERVER_ERROR
+        
+        score = 0.0
+        # self-check score
+        if status_code == ErrorCode.SUCCESS:
+            summary_response, e = await self.scorer_manager._cal_ground_truth(task.ground_truth, answer)
+            if not e:
+                log.info(f"Self-check score summary: {summary_response}")
+                score_raw = summary_response.content.strip() if summary_response.content else "0.0"
+                score = utils.safe_float_convert(score_raw)
+        else:
+            solution_prompt = None
 
         elapsed = utils.fix_float(time.perf_counter() - before)
         
@@ -301,13 +373,16 @@ class Miner(BaseNeuron):
             log=log,
         )
 
-        task.response = response
+        task.response = answer
+        task.ground_truth = None
         task.error = error
         task.status_code = status_code.value
         task.usage_info = usage_info
         task.graphql_agent_inner_tool_calls = graphql_agent_inner_tool_calls
         task.miner_model_name = self.llm.model_name
-        task.graphql_agent_model_name = graphql_agent.llm.model_name
+        task.graphql_agent_model_name = agent.llm.model_name if agent else "unknown"
+        task.solution = solution_prompt
+        task.score = str(score)
 
         self.put_db(
             type=type,
@@ -326,7 +401,7 @@ class Miner(BaseNeuron):
         phase: Phase,
         task: SyntheticNonStreamSynapse | OrganicNonStreamSynapse | OrganicStreamSynapse,
         r: dict
-    ) -> tuple[str | None, dict, list, list[str], str | None, str | None, ErrorCode]:
+    ) -> tuple[str | None, dict, list, list[str], str | None, ErrorCode]:
         # logger.info(f"[{tag}] - {task.id} Agent response: {r}")
         
         usage_info = self.token_usage_metrics.parse(task.cid_hash, phase, r)
@@ -355,9 +430,8 @@ class Miner(BaseNeuron):
                 error = utils.try_get_invalid_tool_messages(r.get('messages', []))
                 status_code = ErrorCode.TOOL_ERROR if error is not None else status_code
 
-        response = answer if status_code == ErrorCode.SUCCESS else None
         
-        return answer, usage_info, tool_hit, graphql_agent_inner_tool_calls, response, error, status_code
+        return answer, usage_info, tool_hit, graphql_agent_inner_tool_calls, error, status_code
         
     def print_table(
             self,
@@ -564,7 +638,7 @@ class Miner(BaseNeuron):
             }
             return synapse
 
-        cid_hashs = self.agent_manager.get_miner_agent().keys()
+        cid_hashs = self.agent_manager.get_agents().keys()
         synapse.response = {
             "role": "miner",
             "capacity": {
