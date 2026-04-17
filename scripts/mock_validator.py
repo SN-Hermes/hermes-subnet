@@ -98,7 +98,7 @@ async def run_mock_validator():
                 logger.info("[MockValidator] Shutdown requested during challenge processing")
                 break
             cid_hash = c.cid_hash
-            validator_agent = challenge_manager.agent_manager.get_graphql_agent(cid_hash)
+            validator_agent = challenge_manager.agent_manager.get_agent(cid_hash)
 
             logger.info(f"[MockValidator] start challenge {cid_hash} - round {round_id}...")
             if not validator_agent:

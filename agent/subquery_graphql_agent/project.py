@@ -24,6 +24,8 @@ class RemoteChallenge(BaseModel):
     block_height: str | None
     max_count: int
     version: str
+    ground_truth: str | None
+    solution: str | None
 
 
 class RemoteChallengeListResponse(BaseModel):

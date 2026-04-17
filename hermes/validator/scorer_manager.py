@@ -13,7 +13,7 @@ from agent.stats import Phase, TokenUsageMetrics
 from agent.subquery_graphql_agent.node_types import GraphqlProvider
 from common import utils
 from common.enums import ErrorCode
-from common.prompt_template import CODEX_SCORE_PROMPT, SCORE_PROMPT, create_scoring_json
+from common.prompt_template import CODEX_SCORE_PROMPT, SCORE_PROMPT, SOLUTION_SIMILARITY_PROMPT, create_scoring_json
 from common.prompt_injection_defense import sanitize_for_evaluation
 from common.protocol import SyntheticNonStreamSynapse
 from hermes.validator.ema import EMAUpdater
@@ -45,19 +45,20 @@ class ScorerManager:
         round_id: int = 0,
         node_type: str = ""
     ) -> Tuple[List[float], List[float], List[float], List[float], List[str], List[dict]]:
-        elapse_time = [r.elapsed_time for r in miner_synapses]
-        elapse_weights = [
-            utils.fix_float(
-                utils.get_elapse_weight_quadratic(
-                    r.elapsed_time,
-                    ground_cost,
-                    min_latency_improvement_ratio
-                )
-            ) for r in miner_synapses
-        ]
+        # elapse_time = [r.elapsed_time for r in miner_synapses]
+        # elapse_weights = [
+        #     utils.fix_float(
+        #         utils.get_elapse_weight_quadratic(
+        #             r.elapsed_time,
+        #             ground_cost,
+        #             min_latency_improvement_ratio
+        #         )
+        #     ) for r in miner_synapses
+        # ]
         
         # Only calculate ground truth scores for miners with non-zero elapse weights
-        valid_miners = [(r, i) for i, (r, w) in enumerate(zip(miner_synapses, elapse_weights)) if w > 0]
+        # valid_miners = [(r, i) for i, (r, w) in enumerate(zip(miner_synapses, elapse_weights)) if w > 0]
+        valid_miners = [r for r in miner_synapses if r.score > 5]
         
         if valid_miners:
             import random
@@ -73,7 +74,7 @@ class ScorerManager:
                     return await self.cal_ground_truth_score(ground_truth, miner_synapse, cid_hash, token_usage_metrics, round_id=round_id)
             
             valid_scores = await asyncio.gather(
-                *(score_with_semaphore(ground_truth, r, cid_hash, token_usage_metrics, round_id) for r, _ in valid_miners)
+                *(score_with_semaphore(ground_truth, r, cid_hash, token_usage_metrics, round_id) for r in valid_miners)
             )
         else:
             valid_scores = []
@@ -116,24 +117,53 @@ class ScorerManager:
         # SECURITY: Sanitize miner response to detect/log prompt injection attempts
         # sanitized_response = sanitize_for_evaluation(miner_synapse.response, max_length=5000)
         
-        json_data = create_scoring_json(ground_truth, miner_synapse.response)
-        
-        # Directly insert JSON data into the template to avoid format() conflicts with JSON braces
-        question_prompt = SCORE_PROMPT.template.replace("{json_data}", json_data)
-        try :
-            summary_response = await self.llm_score.ainvoke([HumanMessage(content=question_prompt)])
-            if token_usage_metrics is not None:
-                d = token_usage_metrics.parse(
-                    cid_hash, phase=Phase.GENERATE_MINER_GROUND_TRUTH_SCORE, response=summary_response, extra={"round_id": round_id}
-                )
-                token_usage_metrics.append(d)
+        summary_response, e = await self._cal_ground_truth(ground_truth, miner_synapse.response)
+        if e:
+            logger.error(f"[ScorerManager] - {e}")
+            return "0.0", f"{e}"
 
-        except Exception as e:
-            logger.error(f"[ScorerManager] - LLM scoring error: {e}")
-            return "0.0", f"LLM scoring error: {e}"
+        if token_usage_metrics is not None:
+            d = token_usage_metrics.parse(
+                cid_hash, phase=Phase.GENERATE_MINER_GROUND_TRUTH_SCORE, response=summary_response, extra={"round_id": round_id}
+            )
+            token_usage_metrics.append(d)
 
         score = summary_response.content.strip() if summary_response.content else "0.0"
         return score, ""
+
+    async def _cal_ground_truth_score(
+        self,
+        ground_truth: str,
+        answer: str,
+    ) -> tuple[str, str]:
+        json_data = create_scoring_json(ground_truth, answer)
+        question_prompt = SCORE_PROMPT.template.replace("{json_data}", json_data)
+        try :
+            summary_response = await self.llm_score.ainvoke([HumanMessage(content=question_prompt)])
+        except Exception as e:
+            return "0.0", f"LLM scoring error: {e}"
+        
+        score = summary_response.content.strip() if summary_response.content else "0.0"
+        return score, ""
+
+
+    async def cal_solution_similarity_score(self, ground_solution: str, miner_solution: str) -> tuple[str, str]:
+        summary_response, e = await self._cal_solution_similarity(ground_solution, miner_solution)
+        if e:
+            logger.error(f"{e}")
+            return "0.0", f"{e}"
+        score = summary_response.content.strip() if summary_response.content else "0.0"
+        return score, ""
+
+    async def _cal_solution_similarity(self, ground_solution: str, miner_solution: str):
+        json_data = create_scoring_json(ground_solution, miner_solution)
+        question_prompt = SOLUTION_SIMILARITY_PROMPT.template.replace("{json_data}", json_data)
+        try :
+            response = await self.llm_score.ainvoke([HumanMessage(content=question_prompt)])
+        except Exception as e:
+            return None, f"[ScorerManager] - LLM similarity error: {e}"
+        return response, ""
+
 
     async def cal_ground_truth_score_codex(
             self,

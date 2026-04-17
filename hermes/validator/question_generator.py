@@ -174,12 +174,6 @@ class QuestionGenerator:
                 return "", None, f"{e}"
 
         async def try_with_remote():
-
-            # await project.test_covalent(
-            #     source=self.wallet.hotkey.ss58_address,
-            #     sign_func=self.wallet.hotkey.sign,
-            # )
-            # return
             freq = project_frequency.get(project.cid_hash, None)
             if freq is None or freq < 0:
                 return "", None, "Remote challenge skipped due to frequency setting", None
@@ -192,6 +186,7 @@ class QuestionGenerator:
                 source=self.wallet.hotkey.ss58_address,
                 sign_func=self.wallet.hotkey.sign,
             )
+            logger.info(f'-----chs-------{chs}')
             if not chs:
                 return "", None, "No available remote challenges", None
             
@@ -256,15 +251,13 @@ class QuestionGenerator:
         typ = "remote"
         question, metrics_data, error, challenge = await try_with_remote()
         if not question:
-            # v = random.randint(0, 100)
-            # if v <= weight_a:
-            #     question, metrics_data, error = await try_with_generic()
-            #     typ = "generic"
-            # else:
-            #     question, metrics_data, error = await try_with_tools()
-            #     typ = "tools"
-            question, metrics_data, error = await try_with_covalent()
-            typ = "covalent"
+            v = random.randint(0, 100)
+            if v <= weight_a:
+                question, metrics_data, error = await try_with_generic()
+                typ = "generic"
+            else:
+                question, metrics_data, error = await try_with_tools()
+                typ = "tools"
         
         if question:
             self.add_to_history(cid_hash, question)

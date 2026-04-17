@@ -95,3 +95,12 @@ class BaseAgent:
             prompt_cache_key=prompt_cache_key
         )
         return response
+
+    async def ainvoke(self, input: dict):
+        temp_executor = create_react_agent(
+            model=self.llm,
+            tools=self.tools(),
+            prompt=None,
+        )
+        response = await temp_executor.ainvoke(input)
+        return response

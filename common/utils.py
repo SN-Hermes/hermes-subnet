@@ -540,6 +540,7 @@ def safe_float_convert(s: str) -> float:
     try:
         return float(s)
     except Exception as e:
+        logger.error(f"Failed to convert '{s}' to float: {e}")
         return 0.0
 
 def is_array(obj) -> bool:
