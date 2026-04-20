@@ -143,6 +143,8 @@ Step 4: Generate Question - Create ONE Numerical Question Based on Real Data
     - Focus on related but different metrics of the same entity
     - The question must require a new query to answer
   
+  ⚠️ CRITICAL: Skip ALL internal reasoning and thinking steps. Output ONLY the final question.
+  
   Apply these constraints during generation:
   
   ✅ MUST DO:
@@ -165,18 +167,23 @@ Step 4: Generate Question - Create ONE Numerical Question Based on Real Data
   • Do NOT include any explanations, thinking process, or extra text
   • Do NOT add unnecessary modifiers or qualifiers
   • Do NOT ask about the same metrics that were in the query
+  • Do NOT show your reasoning like "I have real data...", "Now I'll generate...", "The query retrieved..."
 
 ---
 
-OUTPUT FORMAT (CRITICAL):
-Output ONLY the pure question text, nothing else.
-- NO thinking process or reasoning
+OUTPUT FORMAT (CRITICAL - READ CAREFULLY):
+You MUST output ONLY the pure question text itself, with NO OTHER CONTENT WHATSOEVER.
+
+Rules:
+- NO thinking process or reasoning before the question
 - NO XML-style tags (<thinking>, <reasoning>, etc.)
 - NO prefixes ("Here's the question:", "The question is:", etc.)
+- NO explanation of what you're doing ("I have real data...", "Now I'll generate...")
 - If unable to generate a valid question, return empty string ""
+- Just the question itself, nothing else
 
 
-Output: [Question only, no explanations, no thinking process, no tags]
+Output: [Question only, no explanations, no thinking process, no tags, no reasoning]
 """
 
 synthetic_challenge_template_subgraph = """You are a question generator base on given graphql schema.
